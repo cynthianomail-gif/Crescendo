@@ -12,8 +12,11 @@ PROFILE = os.path.join(SP, "chromeprof")
 src = io.open(SRC, encoding="utf-8").read()
 inj = io.open(os.path.join(SP, "verify_inject.js"), encoding="utf-8").read()
 assert "</body>" in src, "no </body> in source"
-mark = src.count("crescendo-1")
-assert mark >= 1, "source does not contain APP_BUILD crescendo-1"
+# 不要硬編碼版本號（改了 APP_BUILD 就會擋住自己）。只確認有 APP_BUILD 並印出來，
+# 再跟報告第一行的 BUILD= 對照，就知道測到的是不是這份源檔。
+mb = re.search(r"const APP_BUILD = '([^']+)'", src)
+assert mb, "APP_BUILD not found in source"
+print("SOURCE_BUILD=" + mb.group(1))
 
 doc = src.replace("</body>", "<script>\n" + inj + "\n</script>\n</body>", 1)
 io.open(OUT, "w", encoding="utf-8", newline="\n").write(doc)

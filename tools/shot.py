@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """畫面驗證：每個場景從當前 index.html 重新產生一份測試檔，用 headless Chrome 截圖。"""
-import io, os, subprocess, sys
+import io, os, re, subprocess, sys
 
 SP = os.path.dirname(os.path.abspath(__file__))
 PROJ = r"D:\demo\test"
@@ -17,6 +17,17 @@ function go() {
   try { SCENE(); } catch (e) {
     var p = document.createElement('pre'); p.id = 'shotErr';
     p.textContent = 'SCENE_ERROR: ' + (e.stack || e); document.body.appendChild(p);
+  }
+  // 截圖是靜態的：先把「得分牌抬起」的動畫推到目標狀態，並算出命中的功能卡
+  try {
+    if (winCells) {
+      computeCardFeatHits();
+      setLiftTargets();
+      for (var i = 0; i < F_CARDLIFT + F_LIFTSTAG * 6 + 6; i++) updateLift();
+    }
+  } catch (e) {
+    var r = document.createElement('pre'); r.id = 'shotErr';
+    r.textContent = 'LIFT_ERROR: ' + (e.stack || e); document.body.appendChild(r);
   }
   try { draw(); } catch (e) {
     var q = document.createElement('pre'); q.id = 'shotErr';
@@ -88,8 +99,14 @@ function SCENE() {
     ("04_fg", """
 function SCENE() {
   inFG = true; isSFG = false; fgLeft = 3; fgWin = 1875400;
-  features = rollFeatures(5);
-  features.forEach(function (f, i) { f.triggered = (i % 2 === 0); });
+  features = [
+    { type: FEAT_IDX.addScore, tier: 4,  value: 10, triggered: true,  flash: 0 },
+    { type: FEAT_IDX.mulScore, tier: 16, value: 2,  triggered: false, flash: 0 },
+    { type: FEAT_IDX.addMul,   tier: 12, value: 25, triggered: true,  flash: 0.6 },
+    { type: FEAT_IDX.mulMul,   tier: 15, value: 3,  triggered: true,  flash: 0 },
+    { type: FEAT_IDX.toWild,   tier: 2,  value: 0,  triggered: false, flash: 0 },
+  ];
+  featOrder = [0, 2, 3]; featCursor = 1;
   startMult = 16; freeCount = 0;
   displayScore = 248000; spinWin = 248000; curMult = 16;
   SETB([ID(4,2), ID(4,1), ID(4,3), ID(12,0), WILD_ID]);
@@ -98,7 +115,8 @@ function SCENE() {
   winCells = new Set(handResult.cells);
   handLabelText = handResult.name; handLabelKind = 'hand';
   winTier = 3;
-  currentState = STATE.SHOWING_WIN; stateTimer = 8;
+  // FEAT_APPLY：正在套用第 3 張卡（加倍數 A），A♠ 的箭頭會加強
+  currentState = STATE.FEAT_APPLY; stateTimer = 8;
 }
 """),
     ("05_epic_win", """
@@ -147,7 +165,9 @@ function SCENE() {
 ]
 
 src = io.open(SRC, encoding="utf-8").read()
-assert "crescendo-1" in src, "index.html is not the current build"
+mb = re.search(r"const APP_BUILD = '([^']+)'", src)
+assert mb, "APP_BUILD not found in index.html"
+print("SOURCE_BUILD=" + mb.group(1))
 if not os.path.exists(CHROME):
     print("CHROME_NOT_FOUND")
     sys.exit(2)

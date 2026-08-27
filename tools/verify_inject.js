@@ -364,6 +364,11 @@ function run() {
     winCells = new Set([0, 1]);
     wildBeams = [{ c: 1, t: 4 }];
     freeCount = 2;
+    // 強制讓「抬起」與「命中箭頭」的繪製路徑一定被走到（不靠隨機發牌碰運氣）
+    cardFeatHits = [[0], [], [0, 1], [], [1]];
+    featOrder = [0, 1]; featCursor = 0;
+    setLiftTargets();
+    for (var lq = 0; lq < F_CARDLIFT + F_LIFTSTAG * 6 + 5; lq++) updateLift();
     for (var i = 0; i < sts.length; i++) {
       currentState = sts[i];
       bigWinLabel = 'MEGA WIN';
@@ -375,6 +380,179 @@ function run() {
     inFG = true; fgLeft = 3; draw(); inFG = false;
   } catch (e) { drawErr = (e && e.stack) ? e.stack.split('\n')[0] : String(e); }
   T('draw() 在所有狀態都不拋錯', drawErr === null, drawErr || '');
+
+  /* ===== 10b. 得分牌抬起（出牌感）與功能卡命中箭頭 ===== */
+  NOTE('10b. 抬起與箭頭');
+  reset();
+  T('TUNE_VERSION 已升版（DEFAULT 結構有變）', TUNE_VERSION === 3, TUNE_VERSION);
+
+  // --- 哪張牌命中哪張功能卡 ---
+  var T_RANK2 = 0, T_SUIT_H = 14, T_FACE = 17;   // TIERS: 0~12 點數 / 13~16 ♠♥♦♣ / 17 人頭
+  T('TIERS 索引假設正確',
+    TIERS[T_RANK2].kind === 'rank' && TIERS[T_RANK2].v === 0
+    && TIERS[T_SUIT_H].kind === 'suit' && TIERS[T_SUIT_H].v === 1
+    && TIERS[T_FACE].kind === 'face');
+  board[0][0] = newCell(ID(0, 1));    // 2♥ → 命中「點數2」與「♥」
+  board[1][0] = newCell(ID(9, 0));    // J♠ → 命中「人頭」
+  board[2][0] = newCell(ID(0, 3));    // 2♣ → 命中「點數2」
+  board[3][0] = newCell(ID(5, 2));    // 7♦ → 什麼都不命中
+  board[4][0] = newCell(ID(11, 1));   // K♥ → 命中「♥」與「人頭」
+  features = [
+    { type: FEAT_IDX.addScore, tier: T_RANK2,  value: 1, triggered: false, flash: 0 },
+    { type: FEAT_IDX.addMul,   tier: T_SUIT_H, value: 2, triggered: false, flash: 0 },
+    { type: FEAT_IDX.mulMul,   tier: T_FACE,   value: 2, triggered: false, flash: 0 },
+  ];
+  computeCardFeatHits();
+  T('命中「點數2」的卡 → 第 0、2 格',
+    cardFeatHits[0].indexOf(0) >= 0 && cardFeatHits[2].indexOf(0) >= 0, JSON.stringify(cardFeatHits));
+  T('命中「♥」的卡 → 第 0、4 格',
+    cardFeatHits[0].indexOf(1) >= 0 && cardFeatHits[4].indexOf(1) >= 0);
+  T('命中「人頭」的卡 → 第 1、4 格',
+    cardFeatHits[1].indexOf(2) >= 0 && cardFeatHits[4].indexOf(2) >= 0);
+  T('7♦ 什麼都不命中 → 不畫箭頭', !cardHasFeat(3), JSON.stringify(cardFeatHits[3]));
+  T('一張牌可同時命中多張卡', cardFeatHits[4].length === 2, cardFeatHits[4].length);
+
+  // 功能列的灰階與牌上的箭頭必須是同一份事實（否則會出現卡片說沒觸發、牌上卻有箭頭）
+  T('featIsHit 與箭頭一致：點數2 的卡被命中', featIsHit(0) === true);
+  T('featIsHit 與箭頭一致：♥ 的卡被命中', featIsHit(1) === true);
+  T('featIsHit 與箭頭一致：人頭 的卡被命中', featIsHit(2) === true);
+  features.push({ type: FEAT_IDX.addScore, tier: 8, value: 1, triggered: true, flash: 0 });
+  computeCardFeatHits();
+  T('featIsHit：沒有牌命中的卡回 false（即使 triggered 被亂設）',
+    featIsHit(3) === false, '盤面沒有點數 10');
+  features.pop();
+  computeCardFeatHits();
+
+  // 轉換WILD 卡另有向下光子演繹，不列入箭頭
+  features = [{ type: FEAT_IDX.toWild, tier: T_RANK2, value: 0, triggered: false, flash: 0 }];
+  computeCardFeatHits();
+  T('轉換WILD 卡不畫箭頭', !cardHasFeat(0) && !cardHasFeat(2));
+
+  // 被轉成 WILD 的牌仍保留原牌階 → 箭頭照樣要指到它 [§一般遊戲 H81]
+  features = [
+    { type: FEAT_IDX.toWild,   tier: T_RANK2, value: 0, triggered: false, flash: 0 },
+    { type: FEAT_IDX.addScore, tier: T_RANK2, value: 5, triggered: false, flash: 0 },
+  ];
+  applyWildConvert();
+  T('轉換WILD 真的把牌變 WILD 了', board[0][0].id === WILD_ID);
+  computeCardFeatHits();
+  T('轉成 WILD 的牌仍被加得分卡命中（雙重身分）',
+    cardFeatHits[0].indexOf(1) >= 0, JSON.stringify(cardFeatHits[0]));
+
+  // --- 抬起狀態機 ---
+  reset();
+  TIMING.cardLift = 0.20; TIMING.cardLiftStagger = 0.05; applyTuning();
+  winCells = new Set([0, 2, 4]);
+  setLiftTargets();
+  T('抬起目標：得分牌 = 1',
+    board[0][0].liftTarget === 1 && board[2][0].liftTarget === 1 && board[4][0].liftTarget === 1);
+  T('抬起目標：非得分牌 = 0',
+    board[1][0].liftTarget === 0 && board[3][0].liftTarget === 0);
+  T('逐張錯開：第 1 張不延遲，後面依序遞增',
+    board[0][0].liftDelay === 0 && board[2][0].liftDelay === F_LIFTSTAG
+    && board[4][0].liftDelay === F_LIFTSTAG * 2,
+    board[0][0].liftDelay + ',' + board[2][0].liftDelay + ',' + board[4][0].liftDelay);
+  for (var lf = 0; lf < F_CARDLIFT + F_LIFTSTAG * 3 + 5; lf++) updateLift();
+  T('跑完後得分牌抬到頂', board[0][0].lift === 1 && board[4][0].lift === 1,
+    board[0][0].lift + ',' + board[4][0].lift);
+  T('非得分牌不抬起', board[1][0].lift === 0);
+  clearLift();
+  for (var lf2 = 0; lf2 < F_CARDLIFT + 5; lf2++) updateLift();
+  T('clearLift 後牌落回盤面', board[0][0].lift === 0 && board[4][0].lift === 0,
+    board[0][0].lift + ',' + board[4][0].lift);
+
+  // --- 回彈超衝（出牌的彈出感）---
+  FX.cardLiftBack = 1.7;
+  var peak = 0;
+  for (var q = 0; q <= 100; q++) peak = Math.max(peak, liftEase(q / 100));
+  T('超衝：中途會超過 1（彈出後回落）', peak > 1.02, 'peak=' + peak.toFixed(3));
+  T('超衝：兩端仍是 0 與 1', liftEase(0) === 0 && liftEase(1) === 1);
+  FX.cardLiftBack = 0;
+  var peak0 = 0;
+  for (var q2 = 0; q2 <= 100; q2++) peak0 = Math.max(peak0, liftEase(q2 / 100));
+  T('超衝設 0 就不超過 1', peak0 <= 1.0001, 'peak=' + peak0.toFixed(3));
+  FX.cardLiftBack = DEFAULT_FX.cardLiftBack;
+
+  // --- 箭頭顯示時機 ---
+  currentState = STATE.SHOWING_WIN; T('箭頭在 SHOWING_WIN 顯示', showFeatArrows() === true);
+  currentState = STATE.FEAT_APPLY;  T('箭頭在 FEAT_APPLY 顯示', showFeatArrows() === true);
+  currentState = STATE.SCORE_RUN;   T('箭頭在 SCORE_RUN 顯示', showFeatArrows() === true);
+  currentState = STATE.IDLE;        T('箭頭在待機不顯示', showFeatArrows() === false);
+  currentState = STATE.SPINNING;    T('箭頭在轉動中不顯示', showFeatArrows() === false);
+  currentState = STATE.DRAW_HINT;   T('箭頭在差一張預報不顯示', showFeatArrows() === false);
+
+  // --- 端對端：真的走 startSpin/update，得分時牌會抬起 ---
+  reset(); ODDS.wToWild = 0; ODDS.maxRound = 1; forceSpinType = 'pair';
+  startSpin();
+  var liftSeen = 0, e2e = 0;
+  while (e2e < 200000) {
+    update(); e2e++;
+    if (winCells) {
+      var mx = 0;
+      winCells.forEach(function (c) { mx = Math.max(mx, board[c][0].lift); });
+      if (mx > liftSeen) liftSeen = mx;
+    }
+    if (currentState === STATE.IDLE && !inFG) break;
+  }
+  T('端對端：得分時得分牌抬到頂', liftSeen === 1, 'maxLift=' + liftSeen);
+
+  function liftFrames(sec) {
+    reset(); ODDS.wToWild = 0; ODDS.maxRound = 1;
+    TIMING.cardLift = sec; TIMING.cardLiftStagger = 0; applyTuning();
+    forceSpinType = 'pair';
+    startSpin();
+    var n = 0, from = -1, to = -1;
+    while (n < 200000) {
+      update(); n++;
+      if (winCells) {
+        if (from < 0) from = n;
+        var top = true;
+        winCells.forEach(function (c) { if (board[c][0].lift < 1) top = false; });
+        if (top && to < 0) to = n;
+      }
+      if (currentState === STATE.IDLE && !inFG) break;
+    }
+    return (from >= 0 && to >= 0) ? to - from : -1;
+  }
+  var lfA = liftFrames(0.1), lfB = liftFrames(1.0);
+  T('端對端：拉長抬起時長 → 抬到頂的幀數變多', lfA > 0 && lfB > lfA * 4, lfA + ' → ' + lfB);
+
+  /* ===== 10c. 版面幾何（把只有肉眼看得到的重疊問題釘住）===== */
+  NOTE('10c. 版面幾何');
+  reset();
+  var liftTop   = LAYOUT.grid.y - FX.cardLiftY - CARD_H * (FX.cardLiftScale - 1) / 2;
+  var arrowTop  = liftTop - 10 - FX.arrowSize * 1.5 * 1.3;      // 1.3 = 加強箭頭的放大
+  var featBot   = LAYOUT.featureRow.y + LAYOUT.featureRow.h;
+  var barTop    = LAYOUT.bottomUI.y - 46;                       // 公版面板素材頂緣
+  T('抬起後的牌不頂到功能列', liftTop > featBot,
+    'cardTop=' + liftTop.toFixed(1) + ' featBottom=' + featBot);
+  T('命中箭頭不頂到功能列', arrowTop > featBot,
+    'arrowTop=' + arrowTop.toFixed(1) + ' featBottom=' + featBot);
+  T('盤面不壓到公版面板', LAYOUT.grid.y + GRID_H < barTop,
+    (LAYOUT.grid.y + GRID_H) + ' < ' + barTop);
+  // 牌型資訊是兩行：主文字 26px（baseline middle）＋ 第二行 17px（中心 +26）
+  var labelTop = LAYOUT.handLabel.y - 13;
+  var labelBot = LAYOUT.handLabel.y + 26 + 9;
+  T('牌型資訊在盤面下方、不壓到公版面板',
+    labelTop >= LAYOUT.grid.y + GRID_H && labelBot < barTop,
+    'label ' + labelTop + '~' + labelBot + ' gridBottom=' + (LAYOUT.grid.y + GRID_H) + ' barTop=' + barTop);
+  T('FREE 燈條不與盤面重疊', LAYOUT.freeMeter.x >= LAYOUT.grid.x + GRID_W,
+    LAYOUT.freeMeter.x + ' >= ' + (LAYOUT.grid.x + GRID_W));
+  T('FG 局數欄不與盤面重疊', LAYOUT.fgCounter.x + LAYOUT.fgCounter.w <= LAYOUT.grid.x,
+    (LAYOUT.fgCounter.x + LAYOUT.fgCounter.w) + ' <= ' + LAYOUT.grid.x);
+  T('得分欄與倍數欄不重疊', LAYOUT.scoreBox.x + LAYOUT.scoreBox.w <= LAYOUT.multBox.x);
+  T('得分欄／倍數欄不與功能列重疊',
+    LAYOUT.scoreBox.y + LAYOUT.scoreBox.h <= LAYOUT.featureRow.y,
+    (LAYOUT.scoreBox.y + LAYOUT.scoreBox.h) + ' <= ' + LAYOUT.featureRow.y);
+  T('統計列的顯示開關不壓到得分欄', LAYOUT.statsBar.y + 102 <= LAYOUT.scoreBox.y,
+    (LAYOUT.statsBar.y + 102) + ' <= ' + LAYOUT.scoreBox.y);
+  T('盤面水平置中於畫面', Math.abs((LAYOUT.grid.x + GRID_W / 2) - W / 2) <= 2,
+    'centre=' + (LAYOUT.grid.x + GRID_W / 2) + ' W/2=' + (W / 2));
+  T('功能列與盤面同寬同起點',
+    LAYOUT.featureRow.x === LAYOUT.grid.x && LAYOUT.featureRow.w === GRID_W,
+    LAYOUT.featureRow.x + '/' + LAYOUT.featureRow.w + ' vs ' + LAYOUT.grid.x + '/' + GRID_W);
+  T('牌是縱長的（撲克牌比例）', CARD_H > CARD_W && CARD_W / CARD_H > 0.6 && CARD_W / CARD_H < 0.8,
+    CARD_W + 'x' + CARD_H + ' ratio=' + (CARD_W / CARD_H).toFixed(3));
 
   /* ===== 11. 起始倍數上限（[自設] 保護）===== */
   NOTE('11. 起始倍數上限');

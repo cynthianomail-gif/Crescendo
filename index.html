@@ -243,7 +243,7 @@ canvas { display: block; width: 100%; height: 100%; }
  * 面板本身（區塊 7）原則上不用動。
  * ========================================================== */
 
-const APP_BUILD = 'crescendo-1';   // 驗證用識別值：測到的是不是最新版，看這個
+const APP_BUILD = 'crescendo-3';   // 驗證用識別值：測到的是不是最新版，看這個
 const GAME_NAME = 'Crescendo';
 
 const canvas = document.getElementById('gameCanvas');
@@ -272,7 +272,7 @@ document.getElementById('fsBtn').addEventListener('click', () => {
  * ========================================================== */
 
 const COLS = 5, ROWS = 1;                  // 1×5 盤面 [企劃 §一般遊戲 D19]
-const CARD_W = 150, CARD_H = 210;          // 撲克牌格尺寸（企劃未給 px，[自設]）
+const CARD_W = 140, CARD_H = 196;          // 撲克牌格尺寸（比例 0.714 接近實體牌，企劃未給 px，[自設]）
 const CELL_R = 14;
 const GRID_W = COLS * CARD_W, GRID_H = ROWS * CARD_H;
 let GRID_X = 265, GRID_Y = 300;            // 由 LAYOUT.grid 驅動，syncLayoutDerived() 重算
@@ -363,6 +363,8 @@ const DEFAULT_TIMING = {
   landBounce:     0.20,   // 落定回彈 [§節奏表 AI6 回彈0.2s]
   winHold:        0.40,   // 停輪後中獎停頓 [§節奏表 D7/P7]
   cardLock:       0.30,   // 得分牌鎖定演繹 [自設]
+  cardLift:       0.34,   // 得分牌抬起（出牌感）動畫時長 [自設]
+  cardLiftStagger:0.06,   // 得分牌逐張抬起的錯開間隔 [自設]
   featTrigger:    0.45,   // 功能卡逐張觸發演繹 [自設：§美術需求說明無秒數]
   preHold1:       0.30,   // 1階 得分相乘演繹前停留 [§高倍得分層級 E6]
   preHold2:       0.80,   // 2階 [§層級 E9]
@@ -389,6 +391,7 @@ const TIMING_META = [
     ['reelSpeed', '捲動一格時間', 0.01, 0.3, 0.005], ['landBounce', '落定回彈'] ] },
   { group: '得分與功能卡', items: [
     ['winHold', '停輪後中獎停頓'], ['cardLock', '得分牌鎖定'],
+    ['cardLift', '得分牌抬起時長'], ['cardLiftStagger', '逐張抬起錯開', 0, 0.5, 0.01],
     ['featTrigger', '功能卡逐張觸發'],
     ['scoreAppear', '中獎後出現分數'], ['scoreHold', '分數停留'],
     ['symbolFx', '圖示演繹'], ['multBoost', '起始倍數加倍'] ] },
@@ -405,7 +408,7 @@ const TIMING_META = [
 // 甘特圖起點（秒）：同組內各段演繹在時間軸上的相對位置，只影響面板視覺
 const DEFAULT_TIMING_START = {
   reelStart: 0, reelStopInterval: 1.00, reelSpeed: 0, landBounce: 1.80,
-  winHold: 0, cardLock: 0.40, featTrigger: 0.70,
+  winHold: 0, cardLock: 0.40, cardLift: 0.40, cardLiftStagger: 0.40, featTrigger: 0.70,
   preHold1: 1.15, preHold2: 1.15, preHold3: 1.15,
   postHold1: 2.15, postHold2: 2.15, postHold3: 2.15,
   scoreAppear: 1.45, scoreHold: 2.45, symbolFx: 0.40, multBoost: 1.15,
@@ -417,14 +420,17 @@ const DEFAULT_TIMING_START = {
  * 下方公版面板：固定沿用海克力斯的公版（assets/public_ui.png，1280×126 貼齊畫面底部）。
  * 素材頂緣 barY = bottomUI.y - 46（bottomUI.y=640 → 594～720）。
  * 程式只補動態數字與狀態框；判定由 spinBtn（圓形）／autoBtn（方框）控制。 */
+// 垂直空間是排過的：功能列底 246 → 盤面上緣 342 之間留 96px，
+// 讓「得分牌抬起 + 上方箭頭」不會頂到功能卡。動 grid.y / featureRow / cardLiftY / arrowSize
+// 之前先看驗證腳本的「版面幾何」那幾條斷言，它們把這些間距釘住了。
 const DEFAULT_LAYOUT = {
-  grid:       { x: 265,  y: 300 },
-  featureRow: { x: 265,  y: 188, w: 750, h: 96 },    // 功能列（5 格）[§一般遊戲 D30]
-  scoreBox:   { x: 265,  y: 112, w: 300, h: 64 },    // 左上黃框＝得分 [§一般遊戲 D30]
-  multBox:    { x: 715,  y: 112, w: 300, h: 64 },    // 右上藍框＝起始倍數 [§一般遊戲 D30]
-  freeMeter:  { x: 1042, y: 300, w: 74,  h: 210 },   // 右側 FREE 燈條 [§一般遊戲 E65]
-  handLabel:  { x: 640,  y: 540 },                   // 牌型資訊（XXX DRAW / AGAIN）[§美術 E61]
-  fgCounter:  { x: 146,  y: 300, w: 96,  h: 96 },
+  grid:       { x: 290,  y: 336 },
+  featureRow: { x: 290,  y: 170, w: 700, h: 76 },    // 功能列（5 格）[§一般遊戲 D30]
+  scoreBox:   { x: 290,  y: 104, w: 290, h: 56 },    // 左上黃框＝得分 [§一般遊戲 D30]
+  multBox:    { x: 700,  y: 104, w: 290, h: 56 },    // 右上藍框＝起始倍數 [§一般遊戲 D30]
+  freeMeter:  { x: 1010, y: 336, w: 72,  h: 196 },   // 右側 FREE 燈條 [§一般遊戲 E65]
+  handLabel:  { x: 640,  y: 554 },                   // 牌型資訊（XXX DRAW / AGAIN）[§美術 E61]
+  fgCounter:  { x: 186,  y: 336, w: 92,  h: 92 },
   statsBar:   { x: 0,    y: 0 },
   bottomUI:   { x: 0,    y: 640 },
   spinBtn:    { x: 1014, y: 588, w: 165, h: 184 },
@@ -477,6 +483,10 @@ const DEFAULT_FX = {
   popSize1: 8, popSize2: 11, popSize3: 14,
   popRing2: 52, popRing3: 74,
   popFlash2: 0.25, popFlash3: 0.45,
+  // 得分牌抬起（出牌感）。tilt 讓 5 張呈扇形外傾、arc 讓中間那張最高、back 是回彈超衝（0 = 不超衝）
+  cardLiftY: 30, cardLiftScale: 1.10, cardLiftTilt: 7, cardLiftArc: 0.25, cardLiftBack: 1.7,
+  // 命中功能卡的牌：牌上方的箭頭指示 ＋ 牌身紫框
+  arrowSize: 15, arrowGlow: 24, arrowBob: 4, arrowBobMs: 520, hitFrameGlow: 26,
   featGlow: 22, featBreath: 900,             // 功能卡待機呼吸 [§美術：恆亮+微弱呼吸]
   meterBreath: 320,                          // 燈條快速呼吸（2 個 FREE 時）[§美術 F41]
   wildBeamSpeed: 420,                        // 轉換 WILD 光子傳遞（向下）[§美術 H29]
@@ -490,6 +500,14 @@ const FX_META = [
   { group: '四階大獎門檻(÷押注)', items: [
     ['bigWinRatio', 'BIG WIN', 1, 500, 1], ['superWinRatio', 'SUPER WIN', 1, 800, 1],
     ['megaWinRatio', 'MEGA WIN', 1, 1200, 1], ['epicWinRatio', 'EPIC WIN', 1, 2000, 1] ] },
+  { group: '得分牌抬起（出牌感）', items: [
+    ['cardLiftY', '抬起高度(px)', 0, 160, 1], ['cardLiftScale', '抬起放大(倍)', 1, 1.6, 0.01],
+    ['cardLiftTilt', '扇形傾斜(度)', 0, 30, 0.5], ['cardLiftArc', '中間最高(弧度)', 0, 0.8, 0.05],
+    ['cardLiftBack', '回彈超衝(0=無)', 0, 5, 0.1] ] },
+  { group: '功能卡命中箭頭', items: [
+    ['arrowSize', '箭頭大小(px)', 4, 40, 1], ['arrowGlow', '箭頭發光', 0, 80, 1],
+    ['arrowBob', '箭頭浮動(px)', 0, 20, 0.5], ['arrowBobMs', '浮動週期(ms)', 100, 2000, 20],
+    ['hitFrameGlow', '命中牌紫框發光', 0, 80, 1] ] },
   { group: '得分框（三級）', items: [
     ['winLine1', '弱級線寬', 1, 12, 0.5], ['winLine2', '中級線寬', 1, 12, 0.5], ['winLine3', '強級線寬', 1, 16, 0.5],
     ['winGlow1', '弱級發光', 0, 80, 1], ['winGlow2', '中級發光', 0, 80, 1], ['winGlow3', '強級發光', 0, 100, 1],
@@ -622,6 +640,7 @@ function TS(key) { return Math.max(0, TIMING_START[key] || 0); }
  * ========================================================== */
 let SPIN_STOP_FRAMES = [];
 let SPIN_SPEED = 20, BOUNCE_DECAY = 0.6;
+let F_CARDLIFT = 20, F_LIFTSTAG = 4;
 let F_WINHOLD = 24, F_CARDLOCK = 18, F_FEAT = 27, F_SCOREAPPEAR = 60, F_SCOREHOLD = 42;
 let F_SYMFX = 60, F_MULTBOOST = 48, F_RESPIN = 24, F_IDLE = 24, F_DRAWHINT = 60;
 let F_FREECOL = 36, F_BIGWIN = 108, F_FGENTER = 96, F_FGGAP = 24, F_AUTO = 27;
@@ -641,6 +660,8 @@ function applyTuning() {
 
   F_WINHOLD     = TF(TIMING.winHold);
   F_CARDLOCK    = TF(TIMING.cardLock);
+  F_CARDLIFT    = TF(TIMING.cardLift);
+  F_LIFTSTAG    = Math.max(0, Math.round(TIMING.cardLiftStagger * 60));
   F_FEAT        = TF(TIMING.featTrigger);
   F_SCOREAPPEAR = TF(TIMING.scoreAppear);
   F_SCOREHOLD   = TF(TIMING.scoreHold);
@@ -755,6 +776,7 @@ let spinTimer = 0, stateTimer = 0;
 let features = [];             // { type, tier, value, triggered, flash }
 let featOrder = [];            // 本回合要依序套用的功能卡索引（由左至右）
 let featCursor = -1;
+let cardFeatHits = [];         // cardFeatHits[c] = 這張牌命中的功能卡索引（畫箭頭用）
 let startMult = 1;             // 起始倍數（局內持續累積；使用者決議 #2）
 let payUnits = 0, curMult = 1, roundWin = 0;
 
@@ -800,7 +822,10 @@ function randomSymbol() {
   }
   return 0;
 }
-function newCell(id) { return { id: id, origId: null, yOffset: 0, locked: false, scale: 1 }; }
+function newCell(id) {
+  return { id: id, origId: null, yOffset: 0, locked: false, scale: 1,
+           lift: 0, liftTarget: 0, liftDelay: 0 };
+}
 function generateBoard() {
   board = [];
   // 這幾個陣列必須在這裡就備齊：beginReels() 之前的待機畫面也要畫盤面，
@@ -986,6 +1011,79 @@ function applyWildConvert() {
   return conv;
 }
 
+/* ---------- 得分牌抬起（出牌感）與功能卡命中箭頭 ---------- */
+// 哪張牌命中了哪幾張功能卡。牌階比對走 tierIdAt()，所以「轉換成 WILD 的牌」也算命中原牌階。
+function computeCardFeatHits() {
+  cardFeatHits = [];
+  for (let c = 0; c < COLS; c++) cardFeatHits[c] = [];
+  features.forEach((f, i) => {
+    if (FEAT_TYPES[f.type].key === 'toWild') return;   // 轉換WILD 另有向下光子演繹，不畫箭頭
+    const tier = TIERS[f.tier];
+    for (let c = 0; c < COLS; c++) {
+      if (tierMatches(tier, tierIdAt(c))) cardFeatHits[c].push(i);
+    }
+  });
+}
+function cardHasFeat(c) { return !!(cardFeatHits[c] && cardFeatHits[c].length); }
+// 這張功能卡有沒有被盤面上任何一張牌命中。功能列的灰階判定與牌上的箭頭共用這一份，
+// 否則會出現「卡片顯示未觸發、牌上卻有箭頭指向它」的矛盾畫面。
+function featIsHit(i) {
+  if (FEAT_TYPES[features[i].type].key === 'toWild') return !!features[i].triggered;
+  for (let c = 0; c < COLS; c++) {
+    if (cardFeatHits[c] && cardFeatHits[c].indexOf(i) >= 0) return true;
+  }
+  return false;
+}
+// 箭頭與命中紫框只在「得分結算」這段演繹期間顯示（未得分時顯示會誤導玩家）
+function showFeatArrows() {
+  return currentState === STATE.SHOWING_WIN || currentState === STATE.FEAT_APPLY
+      || currentState === STATE.PRE_HOLD    || currentState === STATE.SCORE_RUN
+      || currentState === STATE.POST_HOLD   || currentState === STATE.MULT_BOOST;
+}
+// 這張牌命中的卡裡，有沒有正在被套用的那一張（箭頭要加強）
+function cardFeatActive(c) {
+  if (currentState !== STATE.FEAT_APPLY) return false;
+  if (featCursor < 0 || featCursor >= featOrder.length) return false;
+  return cardHasFeat(c) && cardFeatHits[c].indexOf(featOrder[featCursor]) >= 0;
+}
+// 得分牌逐張抬起；非得分牌放下
+function setLiftTargets() {
+  let k = 0;
+  for (let c = 0; c < COLS; c++) {
+    const cell = board[c][0];
+    if (winCells && winCells.has(c)) {
+      cell.liftTarget = 1;
+      cell.liftDelay = (k++) * F_LIFTSTAG;
+    } else {
+      cell.liftTarget = 0;
+      cell.liftDelay = 0;
+    }
+  }
+}
+function clearLift() {
+  for (let c = 0; c < COLS; c++) {
+    board[c][0].liftTarget = 0;
+    board[c][0].liftDelay = 0;
+  }
+}
+function updateLift() {
+  const step = 1 / Math.max(1, F_CARDLIFT);
+  for (let c = 0; c < COLS; c++) {
+    const cell = board[c][0];
+    if (cell.liftDelay > 0) { cell.liftDelay--; continue; }
+    const t = cell.liftTarget || 0;
+    if (cell.lift < t) cell.lift = Math.min(t, cell.lift + step);
+    else if (cell.lift > t) cell.lift = Math.max(t, cell.lift - step);
+  }
+}
+// easeOutBack：抬到頂會稍微超衝再回來，出牌的彈出感就是這個
+function liftEase(x) {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  const c1 = Math.max(0, FX.cardLiftBack), c3 = c1 + 1;
+  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+}
+
 /* ---------- 回合結算 ---------- */
 function computeRound() {
   payUnits = handResult.pay;
@@ -997,6 +1095,7 @@ function computeRound() {
     f.triggered = true;
     featOrder.push(i);                                  // 由左至右 [§一般遊戲 D53]
   });
+  computeCardFeatHits();
 }
 function applyFeatureAt(i) {
   const f = features[i], t = FEAT_TYPES[f.type];
@@ -1229,6 +1328,7 @@ function enterChecking() {
   computeRound();
   winCells = new Set(handResult.cells);
   handResult.cells.forEach(c => { board[c][0].locked = true; });
+  setLiftTargets();                                     // 得分牌逐張抬起（出牌感）
   handLabelText = handResult.name;
   handLabelKind = 'hand';
   featCursor = -1;
@@ -1277,6 +1377,7 @@ function doRespin() {
     for (let c = 0; c < COLS; c++) cols.push(!keep.has(c));      // 鎖定得分牌 [§一般遊戲 E44]
   }
   winCells = null;
+  clearLift();                                                   // 抬起的牌落回盤面
   handLabelText = 'AGAIN';                                       // [§美術 F63]
   handLabelKind = 'again';
   features.forEach(f => { f.triggered = false; });
@@ -1289,12 +1390,14 @@ function doDrawRespin() {
   for (let c = 0; c < COLS; c++) cols.push(c === drawInfo.cell);   // 只重轉缺的那一張
   // 此重轉不新增功能卡 [§一般遊戲 E51]
   winCells = null;
+  clearLift();
   drawInfo = null;
   beginReels(cols);
 }
 
 function endSpin() {
   winCells = null; handResult = null; drawInfo = null;
+  clearLift();
   drawRespinUsed = 0; freeRespins = 0;
   handLabelText = ''; handLabelKind = '';
   for (let c = 0; c < COLS; c++) board[c][0].locked = false;
@@ -1425,6 +1528,7 @@ function update() {
   if (zoomAmp > 1.001) zoomAmp = 1 + (zoomAmp - 1) * 0.94; else zoomAmp = 1;
   features.forEach(f => { if (f.flash > 0) f.flash = Math.max(0, f.flash - 0.04); });
   wildBeams.forEach(b => { b.t++; });
+  updateLift();
 
   particles = particles.filter(p => {
     p.life++;
@@ -1628,40 +1732,96 @@ function drawBoard() {
     roundRect(GRID_X - 10, GRID_Y - 10, GRID_W + 20, GRID_H + 20, 18,
       'rgba(2,6,23,.78)', '#334155', 2);
   }
+
+  // --- 第一段：還在轉的欄。要裁切，否則上方的預備牌會露到盤面外 ---
   ctx.save();
   ctx.beginPath();
   ctx.rect(GRID_X - 2, GRID_Y, GRID_W + 4, GRID_H);
   ctx.clip();
-
   for (let c = 0; c < COLS; c++) {
+    if (colStopped[c]) continue;
     const x = GRID_X + c * CARD_W;
     const off = colOffsets[c] + (colBounce[c] || 0);
+    drawCard(board[c][1], x + 5, GRID_Y + off - CARD_H + 4, CARD_W - 10, CARD_H - 8, 1);
+    drawCard(board[c][0], x + 5, GRID_Y + off + 4, CARD_W - 10, CARD_H - 8, 1);
+  }
+  ctx.restore();
+
+  // --- 第二段：已停輪的欄。這段「不裁切」——得分牌抬起時要能超出盤面上緣 ---
+  const arrows = showFeatArrows();
+  for (let c = 0; c < COLS; c++) {
+    if (!colStopped[c]) continue;
+    const x = GRID_X + c * CARD_W;
+    const cell = board[c][0];
     const isWin = winCells && winCells.has(c);
     const dim = winCells && !isWin ? FX.dimAlpha : 1;
-    const lockedNow = board[c][0].locked;
-    // 轉動中：上方預備牌接續在畫面外
-    if (!colStopped[c]) {
-      drawCard(board[c][1], x + 5, GRID_Y + off - CARD_H + 4, CARD_W - 10, CARD_H - 8, 1);
-    }
-    const cell = board[c][0];
-    let dy = GRID_Y + off + 4;
-    if (cell.scale < 1) {
+    const bx = x + 5, by = GRID_Y + (colBounce[c] || 0) + 4;
+    const bw = CARD_W - 10, bh = CARD_H - 8;
+    const e = liftEase(cell.lift);
+    const ccx = x + CARD_W / 2, ccy = GRID_Y + CARD_H / 2;
+
+    ctx.save();
+    if (e > 0) {
+      // 以牌中心為軸：往上抬、放大、依欄位扇形傾斜 → 出牌的彈出感
+      const sc = 1 + (FX.cardLiftScale - 1) * e;
+      const spread = COLS > 1 ? (c - (COLS - 1) / 2) / ((COLS - 1) / 2) : 0;
+      // arc：中間那張抬最高、兩側略低，扇形才自然（純外傾會讓中間看起來反而最矮）
+      const arc = 1 - Math.max(0, FX.cardLiftArc) * spread * spread;
+      ctx.translate(ccx, ccy - FX.cardLiftY * e * arc);
+      ctx.rotate(FX.cardLiftTilt * Math.PI / 180 * spread * e);
+      ctx.scale(sc, sc);
+      ctx.translate(-ccx, -ccy);
+      // 落影：先畫一個帶陰影的實心牌形，牌本身會蓋掉它，只留外溢的陰影。
+      // （不能直接對 drawCard 設 shadow，那會讓牌面文字也拖影子）
       ctx.save();
-      ctx.translate(x + CARD_W / 2, GRID_Y + CARD_H / 2);
-      ctx.scale(cell.scale, cell.scale);
-      ctx.translate(-(x + CARD_W / 2), -(GRID_Y + CARD_H / 2));
-      drawCard(cell, x + 5, dy, CARD_W - 10, CARD_H - 8, dim);
+      ctx.shadowColor = 'rgba(0,0,0,.6)';
+      ctx.shadowBlur = 22 * e;
+      ctx.shadowOffsetY = 14 * e;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, CELL_R);
+      ctx.fill();
       ctx.restore();
-    } else {
-      drawCard(cell, x + 5, dy, CARD_W - 10, CARD_H - 8, dim);
+    }
+    if (cell.scale < 1) {
+      ctx.translate(ccx, ccy);
+      ctx.scale(cell.scale, cell.scale);
+      ctx.translate(-ccx, -ccy);
+    }
+    drawCard(cell, bx, by, bw, bh, dim);
+
+    // 得分框（三級）
+    if (isWin && showPaylines) {
+      const t = WIN_FRAME_TIERS[winTier] || WIN_FRAME_TIERS[1];
+      const pulse = 0.55 + 0.45 * Math.sin(now / Math.max(20, t.speed));
+      ctx.save();
+      ctx.strokeStyle = t.color; ctx.lineWidth = t.lineW;
+      ctx.shadowColor = t.color; ctx.shadowBlur = t.blur * pulse;
+      ctx.beginPath();
+      ctx.roundRect(bx - 1, by - 1, bw + 2, bh + 2, CELL_R);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // 命中功能卡的牌：紫框（對照企劃畫面示意，正在套用的那張更亮更粗）
+    if (arrows && cardHasFeat(c)) {
+      const act = cardFeatActive(c);
+      ctx.save();
+      ctx.strokeStyle = act ? '#f3e8ff' : '#c084fc';
+      ctx.lineWidth = act ? 5 : 3.5;
+      ctx.shadowColor = '#a855f7';
+      ctx.shadowBlur = FX.hitFrameGlow * (act ? 1.7 : 1);
+      ctx.beginPath();
+      ctx.roundRect(bx - 3, by - 3, bw + 6, bh + 6, CELL_R + 2);
+      ctx.stroke();
+      ctx.restore();
     }
     // 鎖定框（重轉時保留的得分牌）
-    if (lockedNow && colStopped[c] && !winCells) {
+    if (cell.locked && !winCells) {
       ctx.save();
       ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 3;
       ctx.shadowColor = '#22c55e'; ctx.shadowBlur = 14;
       ctx.beginPath();
-      ctx.roundRect(x + 5, GRID_Y + 4, CARD_W - 10, CARD_H - 8, CELL_R);
+      ctx.roundRect(bx, by, bw, bh, CELL_R);
       ctx.stroke();
       ctx.restore();
     }
@@ -1673,28 +1833,20 @@ function drawBoard() {
       ctx.shadowColor = '#c084fc'; ctx.shadowBlur = 30 * pulse;
       ctx.setLineDash([10, 6]);
       ctx.beginPath();
-      ctx.roundRect(x + 3, GRID_Y + 2, CARD_W - 6, CARD_H - 4, CELL_R);
+      ctx.roundRect(bx - 2, by - 2, bw + 4, bh + 4, CELL_R);
       ctx.stroke();
       ctx.restore();
     }
-  }
-  ctx.restore();
-
-  // 得分框（三級）
-  if (winCells && showPaylines) {
-    const t = WIN_FRAME_TIERS[winTier] || WIN_FRAME_TIERS[1];
-    const pulse = 0.55 + 0.45 * Math.sin(now / Math.max(20, t.speed));
-    ctx.save();
-    ctx.strokeStyle = t.color;
-    ctx.lineWidth = t.lineW;
-    ctx.shadowColor = t.color;
-    ctx.shadowBlur = t.blur * pulse;
-    winCells.forEach(c => {
-      ctx.beginPath();
-      ctx.roundRect(GRID_X + c * CARD_W + 4, GRID_Y + 3, CARD_W - 8, CARD_H - 6, CELL_R);
-      ctx.stroke();
-    });
     ctx.restore();
+  }
+
+  // --- 第三段：功能卡命中箭頭。要保持垂直（不隨牌傾斜），所以獨立一輪畫 ---
+  if (arrows) {
+    for (let c = 0; c < COLS; c++) {
+      if (!colStopped[c] || !cardHasFeat(c)) continue;
+      const e = liftEase(board[c][0].lift);
+      drawFeatArrow(c, GRID_Y + 4 - FX.cardLiftY * e, cardFeatActive(c), now);
+    }
   }
 
   // 轉換 WILD 的光子：向下傳遞 [§美術需求說明 H29]
@@ -1715,6 +1867,29 @@ function drawBoard() {
   ctx.restore();
 }
 
+// 命中功能卡的指示箭頭：牌上緣中央一個紫色箭頭（對照企劃的畫面示意）
+function drawFeatArrow(c, topY, strong, now) {
+  const s = Math.max(2, FX.arrowSize) * (strong ? 1.3 : 1);
+  const bob = Math.sin(now / Math.max(60, FX.arrowBobMs)) * FX.arrowBob;
+  const acx = GRID_X + c * CARD_W + CARD_W / 2;
+  const ay = topY - 10 - s * 1.5 - bob;
+  ctx.save();
+  ctx.fillStyle = strong ? '#f3e8ff' : '#c084fc';
+  ctx.shadowColor = '#a855f7';
+  ctx.shadowBlur = FX.arrowGlow * (strong ? 1.7 : 1);
+  ctx.beginPath();
+  ctx.moveTo(acx, ay);                                  // 尖端
+  ctx.lineTo(acx + s * 0.95, ay + s * 0.85);
+  ctx.lineTo(acx + s * 0.34, ay + s * 0.85);
+  ctx.lineTo(acx + s * 0.34, ay + s * 1.5);
+  ctx.lineTo(acx - s * 0.34, ay + s * 1.5);
+  ctx.lineTo(acx - s * 0.34, ay + s * 0.85);
+  ctx.lineTo(acx - s * 0.95, ay + s * 0.85);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 // 功能列：每局 1~5 張功能卡 [§一般遊戲 D40]
 function drawFeatureRow() {
   const o = LAYOUT.featureRow;
@@ -1730,9 +1905,10 @@ function drawFeatureRow() {
     }
     const t = FEAT_TYPES[f.type];
     const high = isHighFeat(f);
+    const hit = featIsHit(i);
     const breath = 0.75 + 0.25 * Math.sin(now / Math.max(100, FX.featBreath));
     ctx.save();
-    if (f.triggered || f.flash > 0) {
+    if (hit || f.flash > 0) {
       ctx.shadowColor = t.color;
       ctx.shadowBlur = FX.featGlow * (f.flash > 0 ? 1 : breath);
     } else if (high) {
@@ -1745,8 +1921,7 @@ function drawFeatureRow() {
     roundRect(x, y, w, h, 12, bg, t.color, high ? 3 : 2);
     ctx.restore();
     // 功能無效＝轉灰階 [§美術需求說明]
-    const inactive = !f.triggered && (currentState === STATE.FEAT_APPLY
-      || currentState === STATE.PRE_HOLD || currentState === STATE.SCORE_RUN);
+    const inactive = !hit && showFeatArrows();
     ctx.save();
     ctx.globalAlpha = inactive ? 0.45 : 1;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1788,16 +1963,16 @@ function drawScoreBoxes() {
   roundRect(sb.x, sb.y, sb.w, sb.h, 12, 'rgba(66,45,4,.88)', '#facc15', 2.5);
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#fde68a'; ctx.font = 'bold 13px sans-serif';
-  ctx.fillText('得分 SCORE', sb.x + 14, sb.y + 17);
+  ctx.fillText('得分 SCORE', sb.x + 14, sb.y + 15);
   ctx.textAlign = 'right';
   ctx.fillStyle = hi ? '#fb7185' : '#fff';           // 高倍變色 [§一般遊戲 F125]
-  ctx.font = 'bold 30px Arial';
-  ctx.fillText(fmtScore(showScore), sb.x + sb.w - 14, sb.y + sb.h - 22);
+  ctx.font = 'bold 28px Arial';
+  ctx.fillText(fmtScore(showScore), sb.x + sb.w - 14, sb.y + sb.h - 19);
 
   roundRect(mb.x, mb.y, mb.w, mb.h, 12, 'rgba(8,43,74,.88)', '#38bdf8', 2.5);
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#bae6fd'; ctx.font = 'bold 13px sans-serif';
-  ctx.fillText('起始倍數 MULTIPLIER', mb.x + 14, mb.y + 17);
+  ctx.fillText('起始倍數 MULTIPLIER', mb.x + 14, mb.y + 15);
   ctx.textAlign = 'right';
   // 只有「套用功能卡→結算」這幾個階段才顯示加成後的 curMult；
   // 其餘（待機／轉動／預報／重轉）顯示本局目前的起始倍數。
@@ -1805,8 +1980,8 @@ function drawScoreBoxes() {
     || currentState === STATE.SCORE_RUN || currentState === STATE.POST_HOLD;
   const showMult = inSettle ? curMult : startMult;
   ctx.fillStyle = showMult > 1 ? '#facc15' : '#fff';
-  ctx.font = 'bold 30px Arial';
-  ctx.fillText('×' + showMult, mb.x + mb.w - 14, mb.y + mb.h - 22);
+  ctx.font = 'bold 28px Arial';
+  ctx.fillText('×' + showMult, mb.x + mb.w - 14, mb.y + mb.h - 19);
   if (currentState === STATE.MULT_BOOST) {
     const k = stateTimer / Math.max(1, F_MULTBOOST);
     ctx.save();
@@ -1871,7 +2046,7 @@ function drawHandLabel() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.shadowColor = col; ctx.shadowBlur = 18;
   ctx.fillStyle = col;
-  ctx.font = 'bold 30px Arial';
+  ctx.font = 'bold 26px Arial';
   ctx.fillText(handLabelText, o.x, o.y);
   // 差一張時列出可完成的牌（≥2 張時輪流顯示）[§一般遊戲 F110/F111]
   if (handLabelKind === 'draw' && drawInfo && drawInfo.needs.length) {
@@ -1880,9 +2055,9 @@ function drawHandLabel() {
     const s = SYMBOLS[id];
     ctx.shadowBlur = 8;
     ctx.fillStyle = '#e9d5ff';
-    ctx.font = 'bold 19px ' + SUIT_FONT;
+    ctx.font = 'bold 17px ' + SUIT_FONT;
     ctx.fillText('需要 ' + RANKS[s.rank] + suitGlyph(s.suit)
-      + (drawInfo.needs.length > 1 ? '（共 ' + drawInfo.needs.length + ' 種）' : ''), o.x, o.y + 30);
+      + (drawInfo.needs.length > 1 ? '（共 ' + drawInfo.needs.length + ' 種）' : ''), o.x, o.y + 26);
   }
   ctx.restore();
 }
@@ -2266,7 +2441,7 @@ document.getElementById('infoTitle').textContent = GAME_NAME;
  * 區塊 7：調校面板（換遊戲原則上不用動）
  * ========================================================== */
 const TUNE_KEY = 'crescendo_tuning';
-const TUNE_VERSION = 1;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
+const TUNE_VERSION = 3;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
 let tunePanelOpen = false, tuneTab = 'timing';
 let layoutSelected = null, layoutDrag = null;
 let layoutFieldRefs = {}, layoutRangeRefs = {};
