@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>SLOT DEMO 骨架</title>
+<title>Crescendo — 1×5 撲克牌 SLOT Demo</title>
 <style>
 /* ===== 版面：固定 1280×720，等比縮放置中 ===== */
 body {
@@ -2830,6 +2830,9 @@ function gameLoop() {
 (async function main() {
   loadTuning();          // 先載入保存值（內含 applyTuning + syncLayoutDerived）
   generateBoard();
+  // 初始畫面就讓功能列有內容（否則一打開功能列全空，看起來像壞的）。
+  // 正式發牌在 startSpin()：企劃 D40 是「每局開始時隨機出現 1~5 張」。
+  features = rollFeatures();
   refreshTuneBody();
   await loadArt();       // 素材缺件不阻斷，退回程式繪製
   requestAnimationFrame(gameLoop);
