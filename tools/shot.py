@@ -1,0 +1,166 @@
+# -*- coding: utf-8 -*-
+"""畫面驗證：每個場景從當前 index.html 重新產生一份測試檔，用 headless Chrome 截圖。"""
+import io, os, subprocess, sys
+
+SP = os.path.dirname(os.path.abspath(__file__))
+PROJ = r"D:\demo\test"
+SRC = os.path.join(PROJ, "index.html")
+CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+PROFILE = os.path.join(SP, "chromeprof")
+
+HEAD = """
+window.requestAnimationFrame = function () { return 0; };
+function ID(r, s) { return r * 4 + s; }
+function SETB(a) { for (var i = 0; i < 5; i++) board[i][0] = newCell(a[i]); }
+function go() {
+  if (!artReady) { setTimeout(go, 20); return; }
+  try { SCENE(); } catch (e) {
+    var p = document.createElement('pre'); p.id = 'shotErr';
+    p.textContent = 'SCENE_ERROR: ' + (e.stack || e); document.body.appendChild(p);
+  }
+  try { draw(); } catch (e) {
+    var q = document.createElement('pre'); q.id = 'shotErr';
+    q.textContent = 'DRAW_ERROR: ' + (e.stack || e); document.body.appendChild(q);
+  }
+}
+go();
+"""
+
+SCENES = [
+    ("01_idle", """
+function SCENE() {
+  currentState = STATE.IDLE;
+  features = [
+    { type: FEAT_IDX.addScore, tier: 3,  value: 25, triggered: false, flash: 0 },
+    { type: FEAT_IDX.addMul,   tier: 14, value: 5,  triggered: false, flash: 0 },
+    { type: FEAT_IDX.toWild,   tier: 17, value: 0,  triggered: false, flash: 0 },
+  ];
+  freeCount = 1; startMult = 1; displayScore = 0; spinWin = 0;
+  SETB([ID(6,0), ID(2,1), ID(10,2), ID(0,3), ID(8,1)]);
+  for (var c = 0; c < 5; c++) colStopped[c] = true;
+}
+"""),
+    ("02_win_royal", """
+function SCENE() {
+  SETB([ID(12,0), ID(11,0), WILD_ID, ID(9,0), ID(8,0)]);
+  for (var c = 0; c < 5; c++) { colStopped[c] = true; board[c][0].locked = true; }
+  features = [
+    { type: FEAT_IDX.addScore, tier: 12, value: 25, triggered: true,  flash: 0.8 },
+    { type: FEAT_IDX.mulMul,   tier: 0,  value: 3,  triggered: false, flash: 0 },
+    { type: FEAT_IDX.addMul,   tier: 17, value: 10, triggered: true,  flash: 0 },
+    { type: FEAT_IDX.mulScore, tier: 12, value: 2,  triggered: true,  flash: 0 },
+  ];
+  handResult = classifyHand(boardIds());
+  winCells = new Set(handResult.cells);
+  handLabelText = handResult.name; handLabelKind = 'hand';
+  payUnits = 15 + 25; curMult = 8 * 10;
+  winTier = 3; startMult = 8;
+  displayScore = ODDS.bet * payUnits; spinWin = displayScore;
+  freeCount = 2;
+  currentState = STATE.SHOWING_WIN; stateTimer = 5;
+  floatTexts = [{ x: GRID_X + GRID_W / 2, y: GRID_Y + GRID_H / 2, t: 4, life: 90,
+                  text: '+' + fmtScore(320000), big: true }];
+  winCells.forEach(function (c) {
+    var cx = GRID_X + c * CARD_W + CARD_W / 2, cy = GRID_Y + CARD_H / 2;
+    for (var i = 0; i < 14; i++) {
+      var a = Math.random() * 6.28, sp = 2 + Math.random() * 5;
+      particles.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.08,
+        life: 8, maxLife: 40, size: 3 + Math.random() * 11, color: '#facc15' });
+    }
+  });
+}
+"""),
+    ("03_draw_hint", """
+function SCENE() {
+  SETB([ID(0,0), ID(3,0), ID(6,0), ID(10,0), ID(7,1)]);
+  for (var c = 0; c < 5; c++) colStopped[c] = true;
+  features = [
+    { type: FEAT_IDX.mulScore, tier: 15, value: 3, triggered: false, flash: 0 },
+    { type: FEAT_IDX.addScore, tier: 9,  value: 1, triggered: false, flash: 0 },
+  ];
+  drawInfo = findDraw(boardIds());
+  handLabelText = (drawInfo.kind === 'flush' ? 'FLUSH' : 'STRAIGHT') + ' DRAW';
+  handLabelKind = 'draw';
+  freeCount = 2; startMult = 2; displayScore = 4500; spinWin = 4500;
+  currentState = STATE.DRAW_HINT; stateTimer = 20;
+}
+"""),
+    ("04_fg", """
+function SCENE() {
+  inFG = true; isSFG = false; fgLeft = 3; fgWin = 1875400;
+  features = rollFeatures(5);
+  features.forEach(function (f, i) { f.triggered = (i % 2 === 0); });
+  startMult = 16; freeCount = 0;
+  displayScore = 248000; spinWin = 248000; curMult = 16;
+  SETB([ID(4,2), ID(4,1), ID(4,3), ID(12,0), WILD_ID]);
+  for (var c = 0; c < 5; c++) colStopped[c] = true;
+  handResult = classifyHand(boardIds());
+  winCells = new Set(handResult.cells);
+  handLabelText = handResult.name; handLabelKind = 'hand';
+  winTier = 3;
+  currentState = STATE.SHOWING_WIN; stateTimer = 8;
+}
+"""),
+    ("05_epic_win", """
+function SCENE() {
+  SETB([ID(4,2), ID(4,1), ID(4,3), ID(4,0), WILD_ID]);
+  for (var c = 0; c < 5; c++) colStopped[c] = true;
+  features = rollFeatures(5);
+  startMult = 64; spinWin = 41200000; displayScore = spinWin;
+  bigWinLabel = 'EPIC WIN';
+  currentState = STATE.BIGWIN; stateTimer = 14;
+}
+"""),
+    ("06_force_menu", """
+function SCENE() {
+  currentState = STATE.IDLE;
+  features = rollFeatures(2);
+  freeCount = 0; displayScore = 0;
+  SETB([ID(6,0), ID(2,1), ID(10,2), ID(0,3), ID(8,1)]);
+  for (var c = 0; c < 5; c++) colStopped[c] = true;
+  forceSpinType = 'royal';
+  showForceMenu = true;
+}
+"""),
+    ("07_tune_timing", """
+function SCENE() {
+  currentState = STATE.IDLE;
+  features = rollFeatures(4);
+  freeCount = 2; displayScore = 0;
+  SETB([ID(12,0), ID(11,1), WILD_ID, ID(9,2), ID(8,3)]);
+  for (var c = 0; c < 5; c++) colStopped[c] = true;
+  tuneTab = 'timing';
+  setTunePanelOpen(true);
+}
+"""),
+    ("08_tune_layout", """
+function SCENE() {
+  currentState = STATE.IDLE;
+  features = rollFeatures(5);
+  freeCount = 1; displayScore = 0;
+  SETB([ID(12,0), ID(11,1), WILD_ID, ID(9,2), ID(8,3)]);
+  for (var c = 0; c < 5; c++) colStopped[c] = true;
+  tuneTab = 'layout';
+  setTunePanelOpen(true);
+}
+"""),
+]
+
+src = io.open(SRC, encoding="utf-8").read()
+assert "crescendo-1" in src, "index.html is not the current build"
+if not os.path.exists(CHROME):
+    print("CHROME_NOT_FOUND")
+    sys.exit(2)
+
+for name, scene in SCENES:
+    doc = src.replace("</body>", "<script>\n" + scene + HEAD + "\n</script>\n</body>", 1)
+    html = os.path.join(PROJ, "_shot_%s.html" % name)
+    png = os.path.join(PROJ, "_shot_%s.png" % name)
+    io.open(html, "w", encoding="utf-8", newline="\n").write(doc)
+    cmd = [CHROME, "--headless=new", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
+           "--allow-file-access-from-files", "--user-data-dir=" + PROFILE,
+           "--window-size=1280,760", "--virtual-time-budget=6000",
+           "--screenshot=" + png, "file:///" + html.replace("\\", "/")]
+    p = subprocess.run(cmd, capture_output=True, timeout=180)
+    size = os.path.getsize(png) if os.path.exists(png) else 0
+    print("%-16s rc=%d png=%d bytes" % (name, p.returncode, size))

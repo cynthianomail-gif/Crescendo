@@ -1,0 +1,2839 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>SLOT DEMO 骨架</title>
+<style>
+/* ===== 版面：固定 1280×720，等比縮放置中 ===== */
+body {
+  margin: 0; padding: 0;
+  background-color: #000; color: #fff;
+  font-family: 'Segoe UI', Tahoma, Verdana, sans-serif;
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  overflow: hidden; touch-action: none;
+}
+#game-container {
+  position: absolute; left: 50%; top: 50%;
+  width: 1280px; height: 720px;
+  margin-left: -640px; margin-top: -360px;
+  background-color: #0f172a;
+  box-shadow: 0 0 30px rgba(0,0,0,0.8);
+  border-radius: 12px; overflow: hidden;
+  transform-origin: center center;
+}
+canvas { display: block; width: 100%; height: 100%; }
+
+/* ===== 側邊按鈕（⛶ 全螢幕 / 📊 測試 / 🔧 調校 / 📖 說明）===== */
+.side-btn {
+  position: absolute; left: 15px;
+  width: 45px; height: 45px;
+  background-color: #1e293b; border: 2px solid #334155;
+  border-radius: 10px; color: #cbd5e1;
+  font-size: 20px; cursor: pointer; z-index: 100; padding: 0;
+  display: flex; justify-content: center; align-items: center;
+  transition: all .2s; box-shadow: 0 4px 6px rgba(0,0,0,.3);
+}
+.side-btn:hover { background-color: #38bdf8; color: #fff; border-color: #0284c7; }
+.side-btn.active { border-color: #facc15; color: #facc15; }
+#fsBtn { left: auto; right: 15px; top: 15px; }
+#statsBtn { top: 15px; }
+#tuneBtn  { top: 70px; }
+#infoBtn  { top: 125px; }
+
+/* ===== 調校面板 ===== */
+#tunePanel {
+  display: none; position: absolute; top: 15px; left: 70px;
+  width: 440px; max-height: 690px;
+  background: rgba(8,15,30,.97); border: 2px solid #334155;
+  border-radius: 14px; z-index: 250; color: #e2e8f0; font-size: 13px;
+  flex-direction: column; overflow: hidden;
+}
+#tunePanel.visible { display: flex; }
+#tuneDragBar {
+  padding: 7px 12px 5px; background: #0b1322;
+  color: #64748b; font-size: 11px; letter-spacing: 1px;
+  border-bottom: 1px solid #1e293b;
+  cursor: move; user-select: none; touch-action: none;
+}
+#tuneDragBar:hover { color: #94a3b8; }
+#tuneClose {
+  position: absolute; top: 5px; right: 8px; width: 26px; height: 24px;
+  background: #1e293b; border: 1px solid #334155; color: #94a3b8;
+  border-radius: 6px; font-size: 14px; line-height: 1; padding: 0;
+  cursor: pointer; z-index: 3; display: flex; align-items: center; justify-content: center;
+}
+#tuneClose:hover { background: #7f1d1d; border-color: #ef4444; color: #fecaca; }
+#tuneTabs { display: flex; gap: 5px; padding: 10px 12px 0; }
+.tune-tab {
+  flex: 1; background: #1e293b; border: 1px solid #334155; color: #94a3b8;
+  border-radius: 8px 8px 0 0; padding: 6px 0; cursor: pointer; font-size: 12px;
+}
+.tune-tab.active { background: #0f3460; color: #38bdf8; border-color: #38bdf8; }
+#tuneBody {
+  overflow-y: auto; padding: 8px 14px 10px;
+  scrollbar-width: thin; scrollbar-color: #334155 transparent;
+}
+.tune-group {
+  margin: 10px 0 4px; color: #38bdf8; font-size: 12px; letter-spacing: 1px;
+  border-bottom: 1px solid #1e293b; padding-bottom: 2px;
+}
+.tune-hint { color: #64748b; font-size: 11px; margin: 6px 0; line-height: 1.6; }
+.tune-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+.tune-row label { flex: 0 0 132px; color: #cbd5e1; font-size: 12px; }
+.tune-row input[type=range] { flex: 1; min-width: 0; accent-color: #38bdf8; }
+.tune-row input[type=number] {
+  width: 62px; background: #0b1322; border: 1px solid #334155;
+  color: #f8fafc; border-radius: 6px; padding: 2px 4px; font-size: 12px;
+}
+.tune-obj-list { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+.tune-obj-btn {
+  background: #1e293b; border: 1px solid #334155; color: #cbd5e1;
+  border-radius: 6px; padding: 3px 8px; cursor: pointer; font-size: 11px;
+}
+.tune-obj-btn:hover { border-color: #38bdf8; color: #38bdf8; }
+.tune-obj-btn.selected { background: #0f3460; border-color: #facc15; color: #facc15; }
+.tune-actions {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  padding: 10px 14px; border-top: 1px solid #1e293b;
+}
+.tune-actions button {
+  background: #1e293b; border: 1px solid #475569; color: #cbd5e1;
+  border-radius: 8px; padding: 6px 0; cursor: pointer; font-size: 13px;
+}
+.tune-actions button:hover { background: #0f3460; border-color: #38bdf8; color: #38bdf8; }
+#tuneApplySpin {
+  grid-column: 1 / -1; background: #0f766e; border-color: #14b8a6;
+  color: #f0fdfa; font-weight: 700;
+}
+#tuneApplySpin:hover { background: #0d9488; border-color: #5eead4; color: #fff; }
+#tuneStatus {
+  grid-column: 1 / -1; min-height: 16px; text-align: center;
+  color: #64748b; font-size: 11px; line-height: 16px;
+}
+#tuneStatus.ok { color: #86efac; }
+#tuneStatus.wait { color: #fde68a; }
+
+/* ===== 節奏甘特圖 ===== */
+.gantt-editor {
+  margin: 6px 0 10px; padding: 8px;
+  background: rgba(15,23,42,.7); border: 1px solid #1e293b; border-radius: 8px;
+}
+.gantt-row {
+  display: grid; grid-template-columns: 104px minmax(110px,1fr) 46px 46px;
+  gap: 5px; align-items: center; margin: 6px 0;
+  color: #cbd5e1; font-size: 11px;
+}
+.gantt-row > label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gantt-track {
+  position: relative; height: 20px; border-radius: 6px; overflow: hidden; cursor: pointer;
+  background: repeating-linear-gradient(90deg, #0f172a 0, #0f172a 23px, #1e293b 24px);
+}
+.gantt-bar {
+  position: absolute; top: 3px; height: 14px; min-width: 8px;
+  border-radius: 5px; cursor: grab; box-shadow: 0 0 8px rgba(0,0,0,.35);
+}
+.gantt-bar:active { cursor: grabbing; }
+.gantt-handle {
+  position: absolute; top: 0; right: 0; width: 8px; height: 100%;
+  background: rgba(255,255,255,.35); cursor: ew-resize;
+}
+.gantt-row input {
+  width: 44px; box-sizing: border-box;
+  background: #0b1322; border: 1px solid #334155; color: #f8fafc;
+  border-radius: 5px; padding: 2px 3px; font-size: 11px;
+}
+
+/* ===== 說明面板 ===== */
+#infoPanel {
+  display: none; position: absolute; inset: 40px 60px;
+  background: rgba(8,15,30,.97); border: 2px solid #334155; border-radius: 14px;
+  z-index: 260; padding: 20px 28px; overflow-y: auto; color: #e2e8f0;
+}
+#infoPanel.visible { display: block; }
+#infoPanel h2 { margin: 0 0 12px; color: #facc15; font-size: 20px; }
+#infoPanel h3 { margin: 14px 0 6px; color: #38bdf8; font-size: 14px; }
+#infoPanel p  { margin: 3px 0; font-size: 13px; line-height: 1.7; }
+#infoPanel table { border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+#infoPanel th, #infoPanel td {
+  border: 1px solid #334155; padding: 3px 10px; text-align: center;
+}
+#infoPanel th { background: #1e293b; color: #94a3b8; }
+#infoClose {
+  position: absolute; top: 14px; right: 18px; width: 34px; height: 34px;
+  background: #1e293b; border: 1px solid #475569; color: #cbd5e1;
+  border-radius: 8px; font-size: 18px; cursor: pointer; padding: 0;
+}
+#infoClose:hover { background: #ef4444; border-color: #ef4444; color: #fff; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <button id="fsBtn"    class="side-btn" title="全螢幕">⛶</button>
+  <button id="statsBtn" class="side-btn active" title="測試面板">📊</button>
+  <button id="tuneBtn"  class="side-btn" title="調校面板（節奏/佈局/特效/數值）">🔧</button>
+  <button id="infoBtn"  class="side-btn" title="遊戲說明">📖</button>
+  <canvas id="gameCanvas" width="1280" height="720"></canvas>
+
+  <div id="tunePanel">
+    <div id="tuneDragBar">⠿ 調校面板（按住此列可拖曳移動）<button id="tuneClose" title="關閉（Esc）">✕</button></div>
+    <div id="tuneTabs">
+      <button class="tune-tab active" data-tab="timing">⏱️ 節奏</button>
+      <button class="tune-tab" data-tab="layout">📐 佈局</button>
+      <button class="tune-tab" data-tab="fx">✨ 特效</button>
+      <button class="tune-tab" data-tab="odds">🎲 數值</button>
+    </div>
+    <div id="tuneBody"></div>
+    <div class="tune-actions">
+      <button id="tuneApplySpin">套用並試轉</button>
+      <button id="tuneReset">重設為預設</button>
+      <button id="tuneExport">匯出全部設定</button>
+      <div id="tuneStatus" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <div id="infoPanel">
+    <button id="infoClose">✕</button>
+    <h2>📖 遊戲說明 — <span id="infoTitle">SLOT DEMO 骨架</span></h2>
+    <div class="grid2">
+      <div>
+        <h3>▌ 基本規則</h3>
+        <p>• 盤面 <b>1 × 5</b>，滾輪停止後組成<b>撲克牌型</b>即可得分</p>
+        <p>• 牌組：52 張標準撲克牌（2～A × ♠♥♦♣）＋ WILD ＋ FREE</p>
+        <p>• 同一張牌單局內<b>可重複出現</b>（所以「五條」成立）</p>
+        <p>• WILD 可代替任意牌；可同時組成多種牌型時取<b>賠率最高</b>者</p>
+        <p>• 順子：最小 <b>A2345</b>，最大 <b>10JQKA</b>，<b>JQKA2 不算</b></p>
+        <h3>▌ 重轉（RESPIN）</h3>
+        <p>• 成牌 <b>2～4 張</b>：鎖定得分牌，其餘重轉</p>
+        <p>• 成牌 <b>5 張</b>：全部重轉，且<b>起始倍數加倍</b></p>
+        <p>• 未得分但<b>差一張</b>成順子/同花：只重轉缺的那一張</p>
+        <p>• 每次得分後重轉並<b>新增 1 張功能卡</b>（上限 5 張）</p>
+        <h3>▌ 功能卡（功能列）</h3>
+        <p>• 每局隨機 <b>1～5 張</b>；指定一種牌階（點數／花色／人頭）</p>
+        <p>• 盤面出現對應牌階即觸發，<b>由左至右</b>依序套用</p>
+        <p>• 加得分 / 乘得分 / 加倍數 / 乘倍數 / 轉換 WILD</p>
+        <h3>▌ 彩金計算</h3>
+        <p>• 得分 = <b>押注額 × 牌型賠率</b></p>
+        <p>• 彩金 = <b>得分（含功能卡加成）× 倍數</b></p>
+        <h3>▌ FREE GAME</h3>
+        <p>• NG 中收集滿 <b>3 個 FREE</b> → 先結算盤面，再進 FG <b>5 局</b></p>
+        <p>• FG 中功能卡與起始倍數<b>持續保留</b>到 FG 結束</p>
+        <p>• SUPER FREE（僅購買）：以已累積 <b>5 張功能卡</b>進入 FG</p>
+        <h3>▌ 操作</h3>
+        <p>• SPIN／空白鍵：開轉；演出中點畫布或 SPIN：跳過</p>
+        <p>• <b>P</b>：暫停。左下 <b>▲</b>：強開選單（牌型／FREE／5 種購買）</p>
+        <p>• 🔧 調校面板：節奏甘特圖／佈局拖曳／特效／數值</p>
+      </div>
+      <div>
+        <h3>▌ 牌型賠率表</h3>
+        <table id="infoPayTable"></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ============================================================
+ * SLOT DEMO 骨架 — 固定配備版
+ * 對照來源：D:\demo\亞格號2、阿瑞斯、海克力斯 三支 demo 的共通架構。
+ * 換遊戲時要改的地方全部集中在【區塊 1 註冊表】與【區塊 4 玩法】，
+ * 面板本身（區塊 7）原則上不用動。
+ * ========================================================== */
+
+const APP_BUILD = 'crescendo-1';   // 驗證用識別值：測到的是不是最新版，看這個
+const GAME_NAME = 'Crescendo';
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = 1280, H = 720;
+
+/* === 視窗自適應縮放 === */
+function resizeApp() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  document.getElementById('game-container').style.transform = 'scale(' + s + ')';
+}
+window.addEventListener('resize', resizeApp);
+window.addEventListener('orientationchange', () => setTimeout(resizeApp, 200));
+resizeApp();
+
+document.getElementById('fsBtn').addEventListener('click', () => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+  else document.exitFullscreen().catch(() => {});
+});
+
+/* ============================================================
+ * 區塊 1：註冊表（單一事實來源）
+ * Crescendo：1×5 撲克牌 SLOT。符號＝52 張標準撲克牌＋WILD＋FREE。
+ * 判定＝撲克牌型（不是線／ways／cluster），見 evaluateHand()。
+ * 每一項的來源標記對照 docs/spec.md。
+ * ========================================================== */
+
+const COLS = 5, ROWS = 1;                  // 1×5 盤面 [企劃 §一般遊戲 D19]
+const CARD_W = 150, CARD_H = 210;          // 撲克牌格尺寸（企劃未給 px，[自設]）
+const CELL_R = 14;
+const GRID_W = COLS * CARD_W, GRID_H = ROWS * CARD_H;
+let GRID_X = 265, GRID_Y = 300;            // 由 LAYOUT.grid 驅動，syncLayoutDerived() 重算
+
+const TF = s => Math.max(1, Math.round(s * 60));   // 秒 → 幀（60fps）
+
+/* --- 牌組定義：id = rank * 4 + suit（0~51）；52 = WILD，53 = FREE --- */
+const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+const RANK_VAL = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];   // A = 14（順子另外處理 A2345）
+const FACE_RANKS = [9, 10, 11];                                   // 人頭牌＝J/Q/K（[自設]，A 不計入）
+const SUITS = [
+  { g: '♠', name: '黑桃', color: '#cbd5e1' },
+  { g: '♥', name: '紅心', color: '#f87171' },
+  { g: '♦', name: '方塊', color: '#fb923c' },
+  { g: '♣', name: '梅花', color: '#7dd3fc' },
+];
+// 花色符號預設會被 emoji 字型接手（♠ 變成彩色圓底圖案），要指定符號字型並加上
+// U+FE0E（text presentation selector）才會畫成單色文字。畫花色一律用這兩個。
+const SUIT_FONT = '"Segoe UI Symbol","Segoe UI Historic","DejaVu Sans",serif';
+const suitGlyph = s => SUITS[s].g + '︎';
+
+const SYMBOLS = [];
+for (let r = 0; r < 13; r++) {
+  for (let s = 0; s < 4; s++) {
+    SYMBOLS.push({
+      name: RANKS[r] + SUITS[s].g, emoji: SUITS[s].g,
+      color: SUITS[s].color, rank: r, suit: s,
+    });
+  }
+}
+const WILD_ID = SYMBOLS.length;
+SYMBOLS.push({ name: 'WILD', emoji: '🌟', color: '#facc15', wild: true, rank: -1, suit: -1 });
+const FREE_ID = SYMBOLS.length;
+SYMBOLS.push({ name: 'FREE', emoji: '🛰️', color: '#22d3ee', free: true, rank: -1, suit: -1 });
+
+const isCard = id => id >= 0 && id < 52;
+const rankOf = id => (isCard(id) ? SYMBOLS[id].rank : -1);
+const suitOf = id => (isCard(id) ? SYMBOLS[id].suit : -1);
+const isFace = id => isCard(id) && FACE_RANKS.indexOf(SYMBOLS[id].rank) >= 0;
+
+/* --- 牌型賠率表 [企劃 §賠率表 B14:D23]，index 越小＝牌型越大 --- */
+const HANDS = [
+  { key: 'five',     name: '五條',       pay: 25   },
+  { key: 'royal',    name: '皇家同花順', pay: 15   },
+  { key: 'stflush',  name: '同花順',     pay: 10   },
+  { key: 'four',     name: '鐵支',       pay: 5    },
+  { key: 'full',     name: '葫蘆',       pay: 2.5  },
+  { key: 'flush',    name: '同花',       pay: 1    },
+  { key: 'straight', name: '順子',       pay: 0.75 },
+  { key: 'three',    name: '三條',       pay: 0.5  },
+  { key: 'twopair',  name: '兩對',       pay: 0.25 },
+  { key: 'pair',     name: '一對',       pay: 0.1  },
+];
+const HAND_IDX = {};
+HANDS.forEach((h, i) => { HAND_IDX[h.key] = i; });
+// 順子的合法點數序列（index 值）：最小 A2345、最大 10JQKA，不含 JQKA2 [§賠率表 B25:B27]
+const STRAIGHTS = [[12, 0, 1, 2, 3]];                    // A,2,3,4,5
+for (let lo = 0; lo <= 8; lo++) STRAIGHTS.push([lo, lo + 1, lo + 2, lo + 3, lo + 4]);
+
+/* --- 功能卡：18 種牌階 × 5 種效果 [§一般遊戲 E68/E69/H72:H81] --- */
+const TIERS = [];
+for (let r = 0; r < 13; r++) TIERS.push({ kind: 'rank', v: r, label: RANKS[r] });
+for (let s = 0; s < 4; s++)  TIERS.push({ kind: 'suit', v: s, label: SUITS[s].g });
+TIERS.push({ kind: 'face', v: 0, label: '人頭' });        // 共 18 種
+
+// values = 企劃明列的數值區間 [§一般遊戲 H73/H75/H77/H79]；weights 為 [自設]（小值高機率）
+const FEAT_TYPES = [
+  { key: 'addScore', name: '加得分',   cat: 'score',   color: '#facc15', sign: '+',
+    values: [0.25, 0.5, 1, 5, 10, 25], weights: [30, 25, 20, 13, 8, 4], wKey: 'wAddScore' },
+  { key: 'mulScore', name: '乘得分',   cat: 'score',   color: '#fbbf24', sign: '×',
+    values: [2, 3],                    weights: [70, 30],               wKey: 'wMulScore' },
+  { key: 'addMul',   name: '加倍數',   cat: 'mult',    color: '#38bdf8', sign: '+',
+    values: [1, 2, 5, 10, 25],         weights: [35, 27, 20, 12, 6],    wKey: 'wAddMul' },
+  { key: 'mulMul',   name: '乘倍數',   cat: 'mult',    color: '#60a5fa', sign: '×',
+    values: [2, 3],                    weights: [70, 30],               wKey: 'wMulMul' },
+  { key: 'toWild',   name: '轉換WILD', cat: 'special', color: '#c084fc', sign: '',
+    values: [0],                       weights: [100],                  wKey: 'wToWild' },
+];
+const FEAT_IDX = {};
+FEAT_TYPES.forEach((f, i) => { FEAT_IDX[f.key] = i; });
+const MAX_FEAT = 5;                                       // 功能列上限 [§一般遊戲 D41]
+
+/* --- 節奏（秒）。預設值取自 §節奏表 D3:P15 的 AUTO/Normal 規範數值 --- */
+const DEFAULT_TIMING = {
+  reelStart:      1.00,   // 轉輪啟動→第1輪停止 [§節奏表 D4/P4]
+  reelStopInterval:0.20,  // 停輪間隔第2~5輪 [§節奏表 D12:P15]
+  reelSpeed:      0.045,  // 捲動一格時間 [自設]
+  landBounce:     0.20,   // 落定回彈 [§節奏表 AI6 回彈0.2s]
+  winHold:        0.40,   // 停輪後中獎停頓 [§節奏表 D7/P7]
+  cardLock:       0.30,   // 得分牌鎖定演繹 [自設]
+  featTrigger:    0.45,   // 功能卡逐張觸發演繹 [自設：§美術需求說明無秒數]
+  preHold1:       0.30,   // 1階 得分相乘演繹前停留 [§高倍得分層級 E6]
+  preHold2:       0.80,   // 2階 [§層級 E9]
+  preHold3:       1.50,   // 3階 [§層級 E11]
+  postHold1:      0.30,   // 1階 相乘演繹後、跑分前停留 [§層級 F6]
+  postHold2:      0.80,   // 2階 [§層級 F9]
+  postHold3:      1.50,   // 3階 [§層級 F11]
+  scoreAppear:    1.00,   // 中獎後出現分數 [§節奏表 D8/P8]
+  scoreHold:      0.70,   // 分數停留時間 [§節奏表 D9/P9]
+  symbolFx:       1.00,   // 圖示演繹 [§節奏表 D10/P10，企劃標「(?)」待實測]
+  multBoost:      0.80,   // 起始倍數加倍演繹 [§節奏表 BQ49 倍數計算0.8s]
+  respinPause:    0.40,   // 有得分的重轉間停頓 [§節奏表 D11/P11]
+  idleGap:        0.40,   // 未得分局間停頓 [§節奏表 D6/P6]
+  drawHint:       1.00,   // 順子/同花預報（單格0.8s＋回彈0.2s）[§節奏表 AI6]
+  freeCollect:    0.60,   // FREE 收集進燈條 [自設]
+  bigWinHold:     1.80,   // 四階大獎報獎停留 [自設]
+  fgEnterHold:    1.60,   // 進 FG 轉場停留 [自設]
+  fgSpinGap:      0.40,   // FG 局間 [§節奏表 AI7：FG 一輪 0.4s]
+  autoSpinDelay:  0.45,   // AUTO 局間停頓 [自設]
+};
+const TIMING_META = [
+  { group: '滾輪／停輪', items: [
+    ['reelStart', '啟動→第1輪停'], ['reelStopInterval', '每輪停輪間隔'],
+    ['reelSpeed', '捲動一格時間', 0.01, 0.3, 0.005], ['landBounce', '落定回彈'] ] },
+  { group: '得分與功能卡', items: [
+    ['winHold', '停輪後中獎停頓'], ['cardLock', '得分牌鎖定'],
+    ['featTrigger', '功能卡逐張觸發'],
+    ['scoreAppear', '中獎後出現分數'], ['scoreHold', '分數停留'],
+    ['symbolFx', '圖示演繹'], ['multBoost', '起始倍數加倍'] ] },
+  { group: '得分層級停留（1/2/3 階）', items: [
+    ['preHold1', '1階 演繹前停留'], ['preHold2', '2階 演繹前停留'], ['preHold3', '3階 演繹前停留'],
+    ['postHold1', '1階 跑分前停留'], ['postHold2', '2階 跑分前停留'], ['postHold3', '3階 跑分前停留'] ] },
+  { group: '重轉／預報', items: [
+    ['respinPause', '有得分重轉間隔'], ['idleGap', '未得分局間'],
+    ['drawHint', '順子/同花預報'], ['freeCollect', 'FREE 收集'] ] },
+  { group: '報獎／FG／AUTO', items: [
+    ['bigWinHold', '大獎報獎停留', 0, 8, 0.1], ['fgEnterHold', 'FG 轉場停留', 0, 8, 0.1],
+    ['fgSpinGap', 'FG 局間'], ['autoSpinDelay', 'AUTO 局間'] ] },
+];
+// 甘特圖起點（秒）：同組內各段演繹在時間軸上的相對位置，只影響面板視覺
+const DEFAULT_TIMING_START = {
+  reelStart: 0, reelStopInterval: 1.00, reelSpeed: 0, landBounce: 1.80,
+  winHold: 0, cardLock: 0.40, featTrigger: 0.70,
+  preHold1: 1.15, preHold2: 1.15, preHold3: 1.15,
+  postHold1: 2.15, postHold2: 2.15, postHold3: 2.15,
+  scoreAppear: 1.45, scoreHold: 2.45, symbolFx: 0.40, multBoost: 1.15,
+  respinPause: 0, idleGap: 0, drawHint: 0.40, freeCollect: 0.40,
+  bigWinHold: 0, fgEnterHold: 0, fgSpinGap: 1.80, autoSpinDelay: 0,
+};
+
+/* --- 佈局（px）---
+ * 下方公版面板：固定沿用海克力斯的公版（assets/public_ui.png，1280×126 貼齊畫面底部）。
+ * 素材頂緣 barY = bottomUI.y - 46（bottomUI.y=640 → 594～720）。
+ * 程式只補動態數字與狀態框；判定由 spinBtn（圓形）／autoBtn（方框）控制。 */
+const DEFAULT_LAYOUT = {
+  grid:       { x: 265,  y: 300 },
+  featureRow: { x: 265,  y: 188, w: 750, h: 96 },    // 功能列（5 格）[§一般遊戲 D30]
+  scoreBox:   { x: 265,  y: 112, w: 300, h: 64 },    // 左上黃框＝得分 [§一般遊戲 D30]
+  multBox:    { x: 715,  y: 112, w: 300, h: 64 },    // 右上藍框＝起始倍數 [§一般遊戲 D30]
+  freeMeter:  { x: 1042, y: 300, w: 74,  h: 210 },   // 右側 FREE 燈條 [§一般遊戲 E65]
+  handLabel:  { x: 640,  y: 540 },                   // 牌型資訊（XXX DRAW / AGAIN）[§美術 E61]
+  fgCounter:  { x: 146,  y: 300, w: 96,  h: 96 },
+  statsBar:   { x: 0,    y: 0 },
+  bottomUI:   { x: 0,    y: 640 },
+  spinBtn:    { x: 1014, y: 588, w: 165, h: 184 },
+  autoBtn:    { x: 1172, y: 641, w: 84,  h: 68 },
+};
+// 公版面板上「跟著整列走」的固定版位（相對 bottomUI，改素材才需要動）
+const UI_SLOT = {
+  betPatch:  { x: 368, dy: 74, w: 154, h: 38 },
+  betText:   { x: 445, dy: 93 },
+  winPatch:  { x: 555, dy: 68, w: 250, h: 50 },
+  winText:   { x: 680, dy: 92 },
+  infoBtn:   { x: 823, dy: 40, w: 88, h: 68 },
+  turboBtn:  { x: 929, dy: 40, w: 78, h: 68 },   // 素材上有，公版未接判定，此處同樣只畫不接
+  forceBtn:  { x: 8,   uy: 17, w: 92, h: 30 },
+};
+const PLAYER = { name: '玩家名稱六字', coin: 1234567890 };
+
+const LAYOUT_META = [
+  ['grid',       '盤面',     o => ({ x: o.x, y: o.y, w: GRID_W, h: GRID_H }), false],
+  ['featureRow', '功能列',   o => ({ x: o.x, y: o.y, w: o.w, h: o.h }), true],
+  ['scoreBox',   '得分欄',   o => ({ x: o.x, y: o.y, w: o.w, h: o.h }), true],
+  ['multBox',    '倍數欄',   o => ({ x: o.x, y: o.y, w: o.w, h: o.h }), true],
+  ['freeMeter',  'FREE燈條', o => ({ x: o.x, y: o.y, w: o.w, h: o.h }), true],
+  ['handLabel',  '牌型資訊', o => ({ x: o.x - 180, y: o.y - 22, w: 360, h: 44 }), false],
+  ['fgCounter',  'FG局數欄', o => ({ x: o.x, y: o.y, w: o.w, h: o.h }), true],
+  ['statsBar',   '統計列',   o => ({ x: o.x, y: o.y, w: W, h: 70 }), false],
+  ['bottomUI',   '公版面板', o => ({ x: o.x, y: o.y - 46, w: W, h: 126 }), false],
+  ['spinBtn',    'SPIN鈕',   o => ({ x: o.x, y: o.y, w: o.w, h: o.h }), true],
+  ['autoBtn',    'AUTO鈕',   o => ({ x: o.x, y: o.y, w: o.w, h: o.h }), true],
+];
+
+/* --- 特效強度 --- */
+const DEFAULT_FX = {
+  dimAlpha:       0.80,   // 未得分牌壓暗至 [§美術需求說明 H9：80%]
+  tier2Ratio:     25,     // 得分演繹 2 階門檻（贏分÷押注）[§高倍得分層級 B9]
+  tier3Ratio:     101,    // 3 階門檻 [§高倍得分層級 B11]
+  bigWinRatio:    25,     // BIG WIN   [§美術需求說明 B76]
+  superWinRatio:  51,     // SUPER WIN
+  megaWinRatio:   101,    // MEGA WIN
+  epicWinRatio:   201,    // EPIC WIN
+  highCardRatio:  10,     // 高倍功能卡門檻（×押注）[§一般遊戲 F119/F120]
+  highScoreRatio: 100,    // 得分數字變高倍色門檻（÷押注）[§一般遊戲 F125]
+  kmbtDigits:     6,      // 超過幾位數切 KMBT [§一般遊戲 F126]
+  shake1: 2, shake2: 7, shake3: 15,          // 震動：細微／中／大 [§層級 D6/D9/D11]
+  zoom2: 1.05, zoom3: 1.11,                  // 鏡頭拉近 1／2 [§層級 J9/J11]
+  winLine1: 3, winLine2: 5, winLine3: 7,
+  winGlow1: 16, winGlow2: 30, winGlow3: 48,
+  winPulse1: 220, winPulse2: 150, winPulse3: 100,
+  popCount1: 8, popCount2: 16, popCount3: 26,
+  popSize1: 8, popSize2: 11, popSize3: 14,
+  popRing2: 52, popRing3: 74,
+  popFlash2: 0.25, popFlash3: 0.45,
+  featGlow: 22, featBreath: 900,             // 功能卡待機呼吸 [§美術：恆亮+微弱呼吸]
+  meterBreath: 320,                          // 燈條快速呼吸（2 個 FREE 時）[§美術 F41]
+  wildBeamSpeed: 420,                        // 轉換 WILD 光子傳遞（向下）[§美術 H29]
+};
+const FX_META = [
+  { group: '得分演繹分級', items: [
+    ['tier2Ratio', '2階門檻(÷押注)', 1, 300, 1], ['tier3Ratio', '3階門檻(÷押注)', 1, 500, 1],
+    ['shake1', '1階震動(px)', 0, 40, 1], ['shake2', '2階震動(px)', 0, 40, 1], ['shake3', '3階震動(px)', 0, 60, 1],
+    ['zoom2', '拉近1(倍)', 1, 1.4, 0.01], ['zoom3', '拉近2(倍)', 1, 1.6, 0.01],
+    ['dimAlpha', '未得分壓暗(0~1)', 0, 1, 0.05] ] },
+  { group: '四階大獎門檻(÷押注)', items: [
+    ['bigWinRatio', 'BIG WIN', 1, 500, 1], ['superWinRatio', 'SUPER WIN', 1, 800, 1],
+    ['megaWinRatio', 'MEGA WIN', 1, 1200, 1], ['epicWinRatio', 'EPIC WIN', 1, 2000, 1] ] },
+  { group: '得分框（三級）', items: [
+    ['winLine1', '弱級線寬', 1, 12, 0.5], ['winLine2', '中級線寬', 1, 12, 0.5], ['winLine3', '強級線寬', 1, 16, 0.5],
+    ['winGlow1', '弱級發光', 0, 80, 1], ['winGlow2', '中級發光', 0, 80, 1], ['winGlow3', '強級發光', 0, 100, 1],
+    ['winPulse1', '弱級脈動(ms)', 40, 600, 5], ['winPulse2', '中級脈動(ms)', 40, 600, 5], ['winPulse3', '強級脈動(ms)', 40, 600, 5] ] },
+  { group: '消除／粒子（三級）', items: [
+    ['popCount1', '弱級粒子數', 0, 60, 1], ['popCount2', '中級粒子數', 0, 60, 1], ['popCount3', '強級粒子數', 0, 80, 1],
+    ['popSize1', '弱級粒子大小', 1, 30, 1], ['popSize2', '中級粒子大小', 1, 30, 1], ['popSize3', '強級粒子大小', 1, 40, 1],
+    ['popRing2', '中級衝擊環', 0, 200, 2], ['popRing3', '強級衝擊環', 0, 240, 2],
+    ['popFlash2', '中級環心白閃', 0, 1, 0.05], ['popFlash3', '強級環心白閃', 0, 1, 0.05] ] },
+  { group: '功能卡／燈條／數字', items: [
+    ['featGlow', '功能卡發光', 0, 60, 1], ['featBreath', '功能卡呼吸(ms)', 100, 2000, 20],
+    ['meterBreath', '燈條呼吸(ms)', 80, 1200, 10], ['wildBeamSpeed', 'WILD光子(ms)', 100, 1500, 20],
+    ['highCardRatio', '高倍卡門檻(×押注)', 1, 100, 1],
+    ['highScoreRatio', '高倍數字門檻(÷押注)', 1, 500, 1],
+    ['kmbtDigits', 'KMBT 切換位數', 4, 12, 1] ] },
+];
+
+/* --- 數值（機率／賠率／規則）--- */
+const DEFAULT_ODDS = {
+  bet:            100,   // 單局押注 [自設]
+  payMul:         1,     // 全域賠率乘數（調 RTP 用；權重是 [自設]，RTP 未校準）
+  cardWeight:     10,    // 52 張牌每張的權重（等權重）[自設]
+  wildWeight:     22,    // WILD 權重 ≈ 4% [自設]
+  freeWeight:     14,    // FREE 權重 ≈ 2.5% [自設]
+  featW1:         35,    // 每局功能卡張數權重 1 張 [自設]（企劃 D40 只寫「隨機 1~5 張」）
+  featW2:         30,
+  featW3:         20,
+  featW4:         10,
+  featW5:         5,
+  wAddScore:      30,    // 功能卡類型權重 [自設]
+  wMulScore:      15,
+  wAddMul:        30,
+  wMulMul:        15,
+  wToWild:        10,
+  drawRespinPct:  40,    // 順子/同花重轉未中後再重轉的機率 % [自設，企劃 E50 標「待與SERVER討論」]
+  drawRespinMax:  5,     // 上述重轉次數上限 [自設，企劃寫「無上限」→ demo 必須設限]
+  fgFree:         3,     // 觸發 FG 所需 FREE 數 [§一般遊戲 E66]
+  freePerSpin:    3,     // 單局最多出現的 FREE 數 [§一般遊戲 E64]
+  fgSpins:        5,     // FG 局數 [§FREE GAME D23]
+  maxRound:       20,    // 單局回合上限（防無限迴圈）[自設]
+  maxStartMult:   64,    // 起始倍數上限 [自設]：企劃未寫上限，不設限時單局贏分會失控（見 docs/spec.md 未知 #12）
+};
+const ODDS_META = [
+  { group: '押注與賠率', items: [
+    ['bet', '單局押注', 10, 1000, 10], ['payMul', '全域賠率乘數', 0.1, 5, 0.05] ] },
+  { group: '轉輪權重', items: [
+    ['cardWeight', '每張牌權重', 1, 40, 1], ['wildWeight', 'WILD 權重', 0, 80, 1],
+    ['freeWeight', 'FREE 權重', 0, 80, 1] ] },
+  { group: '功能卡張數權重', items: [
+    ['featW1', '1 張', 0, 100, 1], ['featW2', '2 張', 0, 100, 1], ['featW3', '3 張', 0, 100, 1],
+    ['featW4', '4 張', 0, 100, 1], ['featW5', '5 張', 0, 100, 1] ] },
+  { group: '功能卡類型權重', items: [
+    ['wAddScore', '加得分', 0, 100, 1], ['wMulScore', '乘得分', 0, 100, 1],
+    ['wAddMul', '加倍數', 0, 100, 1], ['wMulMul', '乘倍數', 0, 100, 1],
+    ['wToWild', '轉換WILD', 0, 100, 1] ] },
+  { group: '重轉規則', items: [
+    ['drawRespinPct', '差一張再轉機率(%)', 0, 100, 5], ['drawRespinMax', '差一張重轉上限', 1, 20, 1],
+    ['maxRound', '單局回合上限', 1, 60, 1], ['maxStartMult', '起始倍數上限', 2, 4096, 2] ] },
+  { group: 'Free Game', items: [
+    ['fgFree', '觸發所需 FREE', 1, 5, 1], ['freePerSpin', '單局最多 FREE', 1, 5, 1],
+    ['fgSpins', 'FG 局數', 1, 50, 1] ] },
+];
+
+/* --- 單選型設定 --- */
+const POP_STYLES = [
+  ['爆散', '粒子四散 + 衝擊環（預設）'],
+  ['碎裂', '碎片下墜，無環'],
+  ['溶解', '原地淡出縮小，粒子少'],
+];
+const DEFAULT_CHOICE = { popStyle: 0 };
+
+/* --- 強開選單（繪製與命中共用同一份，順序＝索引）--- */
+function forceMenuOptions() {
+  return [
+    { label: '關閉',        value: null,      color: '#94a3b8' },
+    { label: '一對',        value: 'pair',    color: '#94a3b8' },
+    { label: '兩對',        value: 'twopair', color: '#a3e635' },
+    { label: '三條',        value: 'three',   color: '#a3e635' },
+    { label: '順子',        value: 'straight',color: '#38bdf8' },
+    { label: '同花',        value: 'flush',   color: '#38bdf8' },
+    { label: '葫蘆',        value: 'full',    color: '#f59e0b' },
+    { label: '鐵支',        value: 'four',    color: '#f59e0b' },
+    { label: '同花順',      value: 'stflush', color: '#fb7185' },
+    { label: '皇家同花順',  value: 'royal',   color: '#fb7185' },
+    { label: '五條',        value: 'five',    color: '#e879f9' },
+    { label: '差一張(順子)', value: 'drawst',  color: '#c084fc' },
+    { label: '差一張(同花)', value: 'drawfl',  color: '#c084fc' },
+    { label: 'FREE ×1',     value: 'free1',   color: '#22d3ee' },
+    { label: 'FREE ×2(預報)',value: 'free2',   color: '#22d3ee' },
+    { label: 'FREE ×3→FG',  value: 'free3',   color: '#10b981' },
+    { label: '買FREE HUNT',  value: 'buyhunt', color: '#818cf8' },
+    { label: '買3 FEATURES', value: 'buy3f',   color: '#818cf8' },
+    { label: '買5 FEATURES', value: 'buy5f',   color: '#818cf8' },
+    { label: '買FREE',       value: 'buyfree', color: '#34d399' },
+    { label: '買SUPER FREE', value: 'buysf',   color: '#f472b6' },
+  ];
+}
+
+/* --- 執行期值：由預設複製而來，面板改的是這幾份 --- */
+let TIMING       = Object.assign({}, DEFAULT_TIMING);
+let TIMING_START = Object.assign({}, DEFAULT_TIMING_START);
+let LAYOUT       = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
+let FX           = Object.assign({}, DEFAULT_FX);
+let ODDS         = Object.assign({}, DEFAULT_ODDS);
+let CHOICE       = Object.assign({}, DEFAULT_CHOICE);
+
+// 由 META 推導出範圍表（載入時鉗制用）
+function buildRange(meta, defMin, defMax, defStep) {
+  const r = {};
+  meta.forEach(g => g.items.forEach(it => {
+    r[it[0]] = [
+      it[2] !== undefined ? it[2] : defMin,
+      it[3] !== undefined ? it[3] : defMax,
+      it[4] !== undefined ? it[4] : defStep,
+    ];
+  }));
+  return r;
+}
+const TIMING_RANGE = buildRange(TIMING_META, 0, 5, 0.05);
+const FX_RANGE     = buildRange(FX_META, 0, 100, 1);
+const ODDS_RANGE   = buildRange(ODDS_META, 0, 1000, 1);
+const TIMING_COLORS = ['#38bdf8', '#facc15', '#fb7185', '#a78bfa', '#34d399', '#f97316', '#60a5fa'];
+
+function TS(key) { return Math.max(0, TIMING_START[key] || 0); }
+
+
+/* ============================================================
+ * 區塊 2：applyTuning — 面板改值後重算所有衍生常數
+ * 規則：程式各處只讀衍生常數或 TIMING/FX/ODDS，不要再出現魔術數字。
+ * ========================================================== */
+let SPIN_STOP_FRAMES = [];
+let SPIN_SPEED = 20, BOUNCE_DECAY = 0.6;
+let F_WINHOLD = 24, F_CARDLOCK = 18, F_FEAT = 27, F_SCOREAPPEAR = 60, F_SCOREHOLD = 42;
+let F_SYMFX = 60, F_MULTBOOST = 48, F_RESPIN = 24, F_IDLE = 24, F_DRAWHINT = 60;
+let F_FREECOL = 36, F_BIGWIN = 108, F_FGENTER = 96, F_FGGAP = 24, F_AUTO = 27;
+let F_PRE = [], F_POST = [];
+let POP_TIERS = [], WIN_FRAME_TIERS = [], SHAKE_TIERS = [], ZOOM_TIERS = [];
+const BOUNCE_AMPLITUDE = 14;
+
+function applyTuning() {
+  SPIN_STOP_FRAMES = [];
+  const first = TF(TIMING.reelStart);
+  for (let c = 0; c < COLS; c++) {
+    SPIN_STOP_FRAMES.push(first + c * TF(TIMING.reelStopInterval));
+  }
+  SPIN_SPEED = Math.max(1, CARD_H / Math.max(1, TIMING.reelSpeed * 60));
+  BOUNCE_DECAY = Math.min(0.95, Math.max(0.05,
+    Math.pow(0.5 / BOUNCE_AMPLITUDE, 1 / TF(TIMING.landBounce))));
+
+  F_WINHOLD     = TF(TIMING.winHold);
+  F_CARDLOCK    = TF(TIMING.cardLock);
+  F_FEAT        = TF(TIMING.featTrigger);
+  F_SCOREAPPEAR = TF(TIMING.scoreAppear);
+  F_SCOREHOLD   = TF(TIMING.scoreHold);
+  F_SYMFX       = TF(TIMING.symbolFx);
+  F_MULTBOOST   = TF(TIMING.multBoost);
+  F_RESPIN      = TF(TIMING.respinPause);
+  F_IDLE        = TF(TIMING.idleGap);
+  F_DRAWHINT    = TF(TIMING.drawHint);
+  F_FREECOL     = TF(TIMING.freeCollect);
+  F_BIGWIN      = TF(TIMING.bigWinHold);
+  F_FGENTER     = TF(TIMING.fgEnterHold);
+  F_FGGAP       = TF(TIMING.fgSpinGap);
+  F_AUTO        = TF(TIMING.autoSpinDelay);
+
+  // 得分層級停留（index 1/2/3 對應 §高倍得分層級設計 的一/二/三階）
+  F_PRE  = [0, TF(TIMING.preHold1),  TF(TIMING.preHold2),  TF(TIMING.preHold3)];
+  F_POST = [0, TF(TIMING.postHold1), TF(TIMING.postHold2), TF(TIMING.postHold3)];
+
+  POP_TIERS = [
+    null,
+    { count: Math.round(FX.popCount1), size: FX.popSize1, ring: 0,           flash: 0 },
+    { count: Math.round(FX.popCount2), size: FX.popSize2, ring: FX.popRing2, flash: FX.popFlash2 },
+    { count: Math.round(FX.popCount3), size: FX.popSize3, ring: FX.popRing3, flash: FX.popFlash3 },
+  ];
+  WIN_FRAME_TIERS = [
+    null,
+    { color: '#fde68a', lineW: FX.winLine1, blur: FX.winGlow1, speed: FX.winPulse1 },
+    { color: '#fbbf24', lineW: FX.winLine2, blur: FX.winGlow2, speed: FX.winPulse2 },
+    { color: '#f97316', lineW: FX.winLine3, blur: FX.winGlow3, speed: FX.winPulse3 },
+  ];
+  SHAKE_TIERS = [0, FX.shake1, FX.shake2, FX.shake3];
+  ZOOM_TIERS  = [1, 1, FX.zoom2, FX.zoom3];
+}
+
+function syncLayoutDerived() {
+  GRID_X = LAYOUT.grid.x;
+  GRID_Y = LAYOUT.grid.y;
+}
+
+
+/* ============================================================
+ * 區塊 3：美術載入（缺件自動退回程式繪製，永遠不會白畫面）
+ * 正式素材放 assets/ 即自動接上；檔案不存在就用色塊＋emoji。
+ * ========================================================== */
+const ART = {
+  sym: SYMBOLS.map((s, i) => 'assets/icon_' + i + '.png'),
+  bg:  'assets/bg.png',
+  frame: 'assets/frame.png',
+  publicUI: 'assets/public_ui.png',   // 下方公版面板（1280×126，全公司共用，勿改尺寸）
+};
+let iconImgs = [], sceneImgs = {}, artReady = false;
+
+function _loadImg(src) {
+  return new Promise(res => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => res(null);
+    im.src = src;
+  });
+}
+async function loadArt() {
+  const jobs = [];
+  ART.sym.forEach((s, i) => jobs.push(_loadImg(s).then(im => { iconImgs[i] = im; })));
+  ['bg', 'frame', 'publicUI'].forEach(k => jobs.push(_loadImg(ART[k]).then(im => { sceneImgs[k] = im; })));
+  await Promise.all(jobs);
+  artReady = true;
+}
+// 有圖就畫圖並回傳 true；沒圖回傳 false，呼叫端自行退回程式繪製
+function drawArtCell(img, x, y, w, h, radius) {
+  if (!img) return false;
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, radius === undefined ? CELL_R : radius);
+  ctx.clip();
+  const r = Math.max(w / img.width, h / img.height);
+  const dw = img.width * r, dh = img.height * r;
+  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  ctx.restore();
+  return true;
+}
+function roundRect(x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1.5; ctx.stroke(); }
+}
+
+/* ============================================================
+ * 區塊 4：玩法
+ * Crescendo 的核心：撲克牌型判定 → 功能卡結算 → 三種重轉 → 回合迴圈。
+ * 流程對照 [企劃 §一般遊戲 D83]：
+ *   滾輪停止 → 判斷【轉換WILD】→ 轉換盤面卡牌 → 判斷得分牌型
+ *   → 依序套用得分/倍數功能卡 → 計算回合得分 → 累加本局總得分
+ *   → 依牌型決定重轉方式並新增功能卡 → 重複 → 無得分 → 結算 → 結束本局
+ * ========================================================== */
+const STATE = {
+  IDLE: 0, SPINNING: 1, FREE_COLLECT: 2, WILD_CONVERT: 3, CHECKING: 4,
+  SHOWING_WIN: 5, FEAT_APPLY: 6, PRE_HOLD: 7, SCORE_RUN: 8, POST_HOLD: 9,
+  MULT_BOOST: 10, RESPIN_PREP: 11, DRAW_HINT: 12, BIGWIN: 13,
+  FG_ENTER: 14, FG_END: 15,
+};
+let currentState = STATE.IDLE;
+
+// board[c] = [可視格, 上方預備格]；cell = { id, origId, yOffset, locked, scale }
+let board = [];
+let targetBoard = null;        // 停輪要落定的 id
+let spinCols = [];             // 這次要轉哪幾欄
+let colStopFrame = [];
+let colOffsets = [], colBounce = [], colStopped = [];
+let spinTimer = 0, stateTimer = 0;
+
+let features = [];             // { type, tier, value, triggered, flash }
+let featOrder = [];            // 本回合要依序套用的功能卡索引（由左至右）
+let featCursor = -1;
+let startMult = 1;             // 起始倍數（局內持續累積；使用者決議 #2）
+let payUnits = 0, curMult = 1, roundWin = 0;
+
+let freeCount = 0, freeRespins = 0, fgPending = false;
+let handResult = null, winCells = null, winTier = 1;
+let scoredKeys = null;         // 本局已計分的具體牌組 [§一般遊戲 D56]
+let roundIdx = 0;
+let drawInfo = null, drawRespinUsed = 0;
+
+let spinWin = 0, fgWin = 0, totalScore = 0, displayScore = 0, scoreFrom = 0;
+let bigWinLabel = '';
+let handLabelText = '', handLabelKind = '';
+let wildBeams = [];
+
+let isAutoSpinning = false, isPaused = false;
+let autoSpinCount = 0;
+let isMouseHoverSpin = false, isMouseHoverAuto = false;
+let fgLeft = 0, inFG = false, isSFG = false;
+let forceSpinType = null, forceActive = null, showForceMenu = false;
+let stats = { spins: 0, hits: 0 };
+let hasHitThisSpin = false;
+let particles = [], floatTexts = [];
+let shakeAmp = 0, zoomAmp = 1;
+// 展示用顯示開關（統計面板內可切換）
+let showPaylines = true, showScorePopup = true, showGridFrame = true;
+let statToggleRects = [];
+
+/* ---------- 轉輪 ---------- */
+function freeAllowed() { return !inFG && freeCount < ODDS.fgFree; }   // FREE 僅出現於 NG [§一般遊戲 E63]
+function weightOf(id) {
+  if (id === WILD_ID) return Math.max(0, ODDS.wildWeight);
+  if (id === FREE_ID) return freeAllowed() ? Math.max(0, ODDS.freeWeight) : 0;
+  return Math.max(0, ODDS.cardWeight);
+}
+function randomSymbol() {
+  let total = 0;
+  for (let i = 0; i < SYMBOLS.length; i++) total += weightOf(i);
+  if (total <= 0) return 0;
+  let r = Math.random() * total;
+  for (let i = 0; i < SYMBOLS.length; i++) {
+    r -= weightOf(i);
+    if (r < 0) return i;
+  }
+  return 0;
+}
+function newCell(id) { return { id: id, origId: null, yOffset: 0, locked: false, scale: 1 }; }
+function generateBoard() {
+  board = [];
+  // 這幾個陣列必須在這裡就備齊：beginReels() 之前的待機畫面也要畫盤面，
+  // 少了它們 colOffsets[c] 會是 undefined → 牌的 y 變 NaN → 整個盤面畫不出來。
+  colOffsets = []; colBounce = []; colStopped = []; colStopFrame = [];
+  for (let c = 0; c < COLS; c++) {
+    board[c] = [newCell(randomSymbol()), newCell(randomSymbol())];
+    colOffsets[c] = 0; colBounce[c] = 0; colStopped[c] = true; colStopFrame[c] = 0;
+  }
+}
+function boardIds() {
+  const ids = [];
+  for (let c = 0; c < COLS; c++) ids.push(board[c][0].id);
+  return ids;
+}
+// 功能卡比對用的牌階 id：轉換成 WILD 的牌仍保留原牌階 [§一般遊戲 H81]
+function tierIdAt(c) {
+  const cell = board[c][0];
+  return cell.origId !== null ? cell.origId : cell.id;
+}
+
+/* ---------- 牌型判定 ---------- */
+function mkHand(key, cells) {
+  const idx = HAND_IDX[key];
+  return {
+    key: key, idx: idx, name: HANDS[idx].name, pay: HANDS[idx].pay,
+    cells: cells.slice().sort((p, q) => p - q),
+  };
+}
+// 回傳最高賠率的成立牌型，或 null。WILD 可代替任意牌 [§一般遊戲 E61]
+function classifyHand(ids) {
+  const wilds = [], cards = [];
+  for (let i = 0; i < ids.length; i++) {
+    if (ids[i] === WILD_ID) wilds.push(i);
+    else if (isCard(ids[i])) cards.push(i);
+    else return null;                     // FREE 在盤面上 → 該輪不判牌型
+  }
+  const n = ids.length, w = wilds.length;
+  const all = [];
+  for (let i = 0; i < n; i++) all.push(i);
+  if (w === n) return mkHand('five', all);
+
+  const rankMap = {}, suitMap = {};
+  cards.forEach(i => {
+    const r = rankOf(ids[i]), s = suitOf(ids[i]);
+    (rankMap[r] = rankMap[r] || []).push(i);
+    (suitMap[s] = suitMap[s] || []).push(i);
+  });
+  const rg = Object.keys(rankMap).map(k => ({ r: +k, cells: rankMap[k] }))
+    .sort((a, b) => b.cells.length - a.cells.length || RANK_VAL[b.r] - RANK_VAL[a.r]);
+  const sg = Object.keys(suitMap).map(k => ({ s: +k, cells: suitMap[k] }))
+    .sort((a, b) => b.cells.length - a.cells.length);
+  const a = rg[0] ? rg[0].cells.length : 0;
+  const b = rg[1] ? rg[1].cells.length : 0;
+  const maxSuit = sg[0] ? sg[0].cells.length : 0;
+  const isFlush = maxSuit + w >= n;
+
+  // 順子：非 WILD 牌的點數必須互異，且全部落在同一組合法序列內（不可跨 A 接環）
+  let stHit = null, stRoyal = false;
+  if (rg.every(g => g.cells.length === 1)) {
+    for (let k = STRAIGHTS.length - 1; k >= 0; k--) {   // 由大到小，優先高順子
+      const S = STRAIGHTS[k];
+      if (rg.every(g => S.indexOf(g.r) >= 0)) {
+        stHit = S;
+        stRoyal = (S[0] === 8 && S[4] === 12);          // 10 J Q K A
+        break;
+      }
+    }
+  }
+  const isStraight = !!stHit;
+
+  if (a + w >= n)                          return mkHand('five', all);
+  if (isFlush && isStraight && stRoyal)    return mkHand('royal', all);
+  if (isFlush && isStraight)               return mkHand('stflush', all);
+  if (a + w >= 4)                          return mkHand('four', rg[0].cells.concat(wilds.slice(0, 4 - a)));
+  const x = Math.max(0, 3 - a);
+  if (a + w >= 3 && b + (w - x) >= 2 && a + b + w >= 5) return mkHand('full', all);
+  if (isFlush)                             return mkHand('flush', all);
+  if (isStraight)                          return mkHand('straight', all);
+  if (a + w >= 3)                          return mkHand('three', rg[0].cells.concat(wilds.slice(0, 3 - a)));
+  if (a >= 2 && b >= 2)                    return mkHand('twopair', rg[0].cells.concat(rg[1].cells));
+  if (a + w >= 2) {
+    return mkHand('pair', a >= 2 ? rg[0].cells.slice(0, 2)
+                                 : rg[0].cells.slice(0, 1).concat(wilds.slice(0, 1)));
+  }
+  return null;
+}
+
+// 差一張即可組成順子/同花時，找出「要重轉的那一格」與可完成的牌 [§一般遊戲 E49/F110]
+function findDraw(ids) {
+  if (ids.indexOf(FREE_ID) >= 0) return null;
+  const cand = [];
+  for (let i = 0; i < COLS; i++) {
+    const rest = [];
+    for (let j = 0; j < COLS; j++) if (j !== i) rest.push(ids[j]);
+    const fneeds = [], sneeds = [];
+    for (let id = 0; id < 52; id++) {
+      const h = classifyHand(rest.concat([id]));
+      if (!h) continue;
+      if (h.key === 'flush' || h.key === 'stflush' || h.key === 'royal') fneeds.push(id);
+      else if (h.key === 'straight') sneeds.push(id);
+    }
+    // 同花賠率(1) > 順子(0.75)，同花優先
+    if (fneeds.length) cand.push({ cell: i, kind: 'flush', needs: fneeds, pri: 0 });
+    else if (sneeds.length) cand.push({ cell: i, kind: 'straight', needs: sneeds, pri: 1 });
+  }
+  if (!cand.length) return null;
+  cand.sort((p, q) => p.pri - q.pri || q.needs.length - p.needs.length);
+  return cand[0];
+}
+
+/* ---------- 功能卡 ---------- */
+function pickWeighted(values, weights) {
+  let tot = 0;
+  for (let i = 0; i < weights.length; i++) tot += Math.max(0, weights[i]);
+  if (tot <= 0) return values[0];
+  let r = Math.random() * tot;
+  for (let i = 0; i < values.length; i++) {
+    r -= Math.max(0, weights[i]);
+    if (r < 0) return values[i];
+  }
+  return values[0];
+}
+function rollFeatType() {
+  const idx = [], wts = [];
+  FEAT_TYPES.forEach((t, i) => { idx.push(i); wts.push(ODDS[t.wKey]); });
+  return pickWeighted(idx, wts);
+}
+function newFeature() {
+  const ti = rollFeatType();
+  const t = FEAT_TYPES[ti];
+  return { type: ti, tier: Math.floor(Math.random() * TIERS.length),
+           value: pickWeighted(t.values, t.weights), triggered: false, flash: 0 };
+}
+function rollFeatCount() {
+  return pickWeighted([1, 2, 3, 4, 5],
+    [ODDS.featW1, ODDS.featW2, ODDS.featW3, ODDS.featW4, ODDS.featW5]);
+}
+function rollFeatures(n) {
+  const cnt = Math.min(MAX_FEAT, n === undefined ? rollFeatCount() : n);
+  const arr = [];
+  for (let i = 0; i < cnt; i++) arr.push(newFeature());
+  return arr;
+}
+function tierMatches(tier, id) {
+  if (!isCard(id)) return false;
+  if (tier.kind === 'rank') return rankOf(id) === tier.v;
+  if (tier.kind === 'suit') return suitOf(id) === tier.v;
+  return isFace(id);                                     // 人頭牌＝J/Q/K
+}
+function featTriggered(f) {
+  const tier = TIERS[f.tier];
+  for (let c = 0; c < COLS; c++) if (tierMatches(tier, tierIdAt(c))) return true;
+  return false;
+}
+function featLabel(f) {
+  const t = FEAT_TYPES[f.type];
+  if (t.key === 'toWild') return 'WILD';
+  return t.sign + (f.value % 1 === 0 ? f.value : f.value.toFixed(2));
+}
+// 高倍功能卡：加得分/加倍數 數值 ≥ 押注額 10× [§一般遊戲 F119/F120]
+function isHighFeat(f) {
+  const t = FEAT_TYPES[f.type];
+  return (t.key === 'addScore' || t.key === 'addMul') && f.value >= FX.highCardRatio;
+}
+// 轉換 WILD：結算得分前觸發 [§一般遊戲 H80]
+function applyWildConvert() {
+  const conv = [];
+  features.forEach(f => {
+    if (FEAT_TYPES[f.type].key !== 'toWild') return;
+    const tier = TIERS[f.tier];
+    for (let c = 0; c < COLS; c++) {
+      const cell = board[c][0];
+      if (cell.id === WILD_ID || !isCard(cell.id)) continue;
+      if (!tierMatches(tier, cell.id)) continue;
+      cell.origId = cell.id;
+      cell.id = WILD_ID;
+      f.triggered = true;
+      f.flash = 1;
+      conv.push(c);
+    }
+  });
+  return conv;
+}
+
+/* ---------- 回合結算 ---------- */
+function computeRound() {
+  payUnits = handResult.pay;
+  curMult = startMult;
+  featOrder = [];
+  features.forEach((f, i) => {
+    if (FEAT_TYPES[f.type].key === 'toWild') return;    // 已在 WILD_CONVERT 處理
+    if (!featTriggered(f)) { f.triggered = false; return; }
+    f.triggered = true;
+    featOrder.push(i);                                  // 由左至右 [§一般遊戲 D53]
+  });
+}
+function applyFeatureAt(i) {
+  const f = features[i], t = FEAT_TYPES[f.type];
+  if (t.key === 'addScore')      payUnits += f.value;
+  else if (t.key === 'mulScore') payUnits *= f.value;
+  else if (t.key === 'addMul')   curMult += f.value;
+  else if (t.key === 'mulMul')   curMult *= f.value;
+  f.flash = 1;
+}
+// 得分 = 押注 × 牌型賠率（含功能卡加成）；彩金 = 得分 × 倍數 [§一般遊戲 F95/F96]
+function scoreNow() { return ODDS.bet * payUnits * ODDS.payMul; }
+function winNow()   { return Math.round(scoreNow() * curMult); }
+function tierOf(winValue) {
+  const ratio = winValue / Math.max(1, ODDS.bet);
+  return ratio >= FX.tier3Ratio ? 3 : ratio >= FX.tier2Ratio ? 2 : 1;
+}
+// KMBT：得分超過 kmbtDigits 位數時切縮寫 [§一般遊戲 F126]
+function fmtScore(v) {
+  const av = Math.abs(v);
+  const digits = Math.floor(av).toString().length;
+  if (digits > FX.kmbtDigits) {
+    const units = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+    for (let i = 0; i < units.length; i++) {
+      if (av >= units[i][0]) {
+        const x = v / units[i][0];
+        const s = Math.abs(x) >= 100 ? x.toFixed(0) : Math.abs(x) >= 10 ? x.toFixed(1) : x.toFixed(2);
+        return s + units[i][1];
+      }
+    }
+  }
+  return Math.round(v).toLocaleString('en-US');
+}
+function isHighScore(v) { return v / Math.max(1, ODDS.bet) > FX.highScoreRatio; }
+
+/* ---------- 強開盤面 ---------- */
+function mkId(r, s) { return r * 4 + s; }
+function rndR() { return Math.floor(Math.random() * 13); }
+function rndS() { return Math.floor(Math.random() * 4); }
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+function pickDistinctRanks(n) {
+  const pool = [];
+  for (let r = 0; r < 13; r++) pool.push(r);
+  return shuffle(pool).slice(0, n);
+}
+// 生成 → 用 classifyHand 驗證，確保真的是目標牌型（避免意外湊成更高牌型）
+function makeHand(key) {
+  for (let att = 0; att < 500; att++) {
+    let ids = null;
+    if (key === 'five') { const r = rndR(); ids = [0, 1, 2, 3, 4].map(() => mkId(r, rndS())); }
+    else if (key === 'four') {
+      const rs = pickDistinctRanks(2);
+      ids = [mkId(rs[0], 0), mkId(rs[0], 1), mkId(rs[0], 2), mkId(rs[0], 3), mkId(rs[1], rndS())];
+    } else if (key === 'full') {
+      const rs = pickDistinctRanks(2);
+      ids = [mkId(rs[0], 0), mkId(rs[0], 1), mkId(rs[0], 2), mkId(rs[1], 0), mkId(rs[1], 1)];
+    } else if (key === 'three') {
+      const rs = pickDistinctRanks(3);
+      ids = [mkId(rs[0], 0), mkId(rs[0], 1), mkId(rs[0], 2), mkId(rs[1], rndS()), mkId(rs[2], rndS())];
+    } else if (key === 'twopair') {
+      const rs = pickDistinctRanks(3);
+      ids = [mkId(rs[0], 0), mkId(rs[0], 1), mkId(rs[1], 0), mkId(rs[1], 1), mkId(rs[2], rndS())];
+    } else if (key === 'pair') {
+      const rs = pickDistinctRanks(4);
+      ids = [mkId(rs[0], 0), mkId(rs[0], 1), mkId(rs[1], rndS()), mkId(rs[2], rndS()), mkId(rs[3], rndS())];
+    } else if (key === 'flush') {
+      const s = rndS(), rs = pickDistinctRanks(5);
+      ids = rs.map(r => mkId(r, s));
+    } else if (key === 'straight') {
+      const S5 = STRAIGHTS[Math.floor(Math.random() * STRAIGHTS.length)];
+      ids = S5.map(r => mkId(r, rndS()));
+    } else if (key === 'stflush') {
+      const s = rndS();
+      const S5 = STRAIGHTS[Math.floor(Math.random() * (STRAIGHTS.length - 1))];   // 排除 royal
+      ids = S5.map(r => mkId(r, s));
+    } else if (key === 'royal') {
+      const s = rndS();
+      ids = [8, 9, 10, 11, 12].map(r => mkId(r, s));
+    } else if (key === 'drawfl') {
+      const s = rndS(), rs = pickDistinctRanks(5);
+      ids = rs.slice(0, 4).map(r => mkId(r, s));
+      ids.push(mkId(rs[4], (s + 1 + Math.floor(Math.random() * 3)) % 4));
+    } else if (key === 'drawst') {
+      const S5 = STRAIGHTS[Math.floor(Math.random() * STRAIGHTS.length)];
+      const drop = Math.floor(Math.random() * 5);
+      const keep = S5.filter((_, i) => i !== drop);
+      ids = keep.map(r => mkId(r, rndS()));
+      const outs = [];
+      for (let r = 0; r < 13; r++) if (S5.indexOf(r) < 0) outs.push(r);
+      ids.push(mkId(outs[Math.floor(Math.random() * outs.length)], rndS()));
+    } else return null;
+
+    shuffle(ids);
+    const h = classifyHand(ids);
+    if (key === 'drawfl' || key === 'drawst') {
+      if (h) continue;                                   // 本身不可有牌型
+      const d = findDraw(ids);
+      if (d && d.kind === (key === 'drawfl' ? 'flush' : 'straight')) return ids;
+      continue;
+    }
+    if (h && h.key === key) return ids;
+  }
+  return null;
+}
+// 產生落定盤面。cols[c] = false 的欄保留原牌（重轉時的鎖定牌）
+function makeTargetBoard(force, cols) {
+  const b = [];
+  for (let c = 0; c < COLS; c++) b[c] = cols[c] ? randomSymbol() : board[c][0].id;
+  if (!force) return b;
+  const allSpin = cols.every(v => v);
+  if (allSpin && HAND_IDX[force] !== undefined) {
+    const ids = makeHand(force);
+    if (ids) return ids;
+  }
+  if (allSpin && (force === 'drawst' || force === 'drawfl')) {
+    const ids = makeHand(force);
+    if (ids) return ids;
+  }
+  if (allSpin && (force === 'free1' || force === 'free2' || force === 'free3')) {
+    const n = force === 'free1' ? 1 : force === 'free2' ? 2 : 3;
+    const slots = shuffle([0, 1, 2, 3, 4]).slice(0, n);
+    slots.forEach(c => { b[c] = FREE_ID; });
+  }
+  return b;
+}
+
+/* ---------- 滾輪控制 ---------- */
+function beginReels(cols) {
+  spinCols = cols.slice();
+  targetBoard = makeTargetBoard(forceActive, spinCols);
+  colStopFrame = [];
+  let k = 0;
+  const first = TF(TIMING.reelStart), gap = TF(TIMING.reelStopInterval);
+  for (let c = 0; c < COLS; c++) {
+    colOffsets[c] = 0;
+    colBounce[c] = 0;
+    colStopped[c] = !spinCols[c];
+    colStopFrame[c] = spinCols[c] ? first + (k++) * gap : 0;
+    if (spinCols[c]) { board[c][0].origId = null; board[c][0].locked = false; }
+  }
+  spinTimer = 0;
+  stateTimer = 0;
+  currentState = STATE.SPINNING;
+  showForceMenu = false;
+}
+function landCol(c) {
+  colStopped[c] = true;
+  colOffsets[c] = 0;
+  colBounce[c] = BOUNCE_AMPLITUDE;
+  board[c][0] = newCell(targetBoard[c]);
+  board[c][1] = newCell(randomSymbol());
+}
+function updateSpinning() {
+  spinTimer++;
+  let allStopped = true;
+  for (let c = 0; c < COLS; c++) {
+    if (colStopped[c]) continue;
+    allStopped = false;
+    colOffsets[c] += SPIN_SPEED;
+    while (colOffsets[c] >= CARD_H) {
+      colOffsets[c] -= CARD_H;
+      board[c][0] = board[c][1];
+      board[c][1] = newCell(randomSymbol());
+    }
+    if (spinTimer >= colStopFrame[c]) landCol(c);
+  }
+  if (allStopped) { forceActive = null; onReelsStopped(); }
+}
+
+/* ---------- 停輪後的分派 ---------- */
+function onReelsStopped() {
+  // 1) FREE 圖示：收集至計量條並重轉該輪 [§一般遊戲 E65]
+  const freeCells = [];
+  for (let c = 0; c < COLS; c++) if (board[c][0].id === FREE_ID) freeCells.push(c);
+  if (freeCells.length > 0 && freeRespins < 10) {
+    freeCount = Math.min(ODDS.fgFree, freeCount + freeCells.length);
+    if (freeCount >= ODDS.fgFree) fgPending = true;      // 局末才進 FG [§FREE GAME D18]
+    currentState = STATE.FREE_COLLECT;
+    stateTimer = 0;
+    return;
+  }
+  // 2) 轉換 WILD 功能卡
+  const conv = applyWildConvert();
+  if (conv.length > 0) {
+    wildBeams = conv.map(c => ({ c: c, t: 0 }));
+    currentState = STATE.WILD_CONVERT;
+    stateTimer = 0;
+    return;
+  }
+  currentState = STATE.CHECKING;
+  stateTimer = 0;
+}
+
+function enterChecking() {
+  const ids = boardIds();
+  const h = classifyHand(ids);
+  handResult = null;
+  if (h) {
+    // 同一具體牌組在一局內只計分一次 [§一般遊戲 D56]（使用者決議 #3：照具體牌組）
+    const key = h.key + '|' + h.cells.map(c => ids[c] + '@' + c).sort().join(',');
+    if (!scoredKeys.has(key)) { scoredKeys.add(key); handResult = h; }
+  }
+  if (!handResult) {
+    // 未得分 → 差一張成順子/同花就只重轉那一張 [§一般遊戲 E48/E49]
+    if (roundIdx < ODDS.maxRound) {
+      const d = findDraw(ids);
+      if (d) {
+        const first = drawRespinUsed === 0;
+        const again = drawRespinUsed < ODDS.drawRespinMax
+                      && Math.random() * 100 < ODDS.drawRespinPct;   // [§一般遊戲 E50]
+        if (first || again) {
+          drawInfo = d;
+          handLabelText = (d.kind === 'flush' ? 'FLUSH' : 'STRAIGHT') + ' DRAW';   // [§美術 E61]
+          handLabelKind = 'draw';
+          currentState = STATE.DRAW_HINT;
+          stateTimer = 0;
+          return;
+        }
+      }
+    }
+    endSpin();
+    return;
+  }
+  hasHitThisSpin = true;
+  computeRound();
+  winCells = new Set(handResult.cells);
+  handResult.cells.forEach(c => { board[c][0].locked = true; });
+  handLabelText = handResult.name;
+  handLabelKind = 'hand';
+  featCursor = -1;
+  currentState = STATE.SHOWING_WIN;
+  stateTimer = 0;
+}
+
+/* ---------- 得分結算流程 ---------- */
+function finishFeatures() {
+  roundWin = winNow();
+  winTier = tierOf(roundWin);
+  spinWin += roundWin;
+  totalScore += roundWin;
+  scoreFrom = displayScore;
+  shakeAmp = SHAKE_TIERS[winTier] || 0;
+  zoomAmp = ZOOM_TIERS[winTier] || 1;
+  if (showScorePopup) {
+    floatTexts.push({
+      x: GRID_X + GRID_W / 2, y: GRID_Y + GRID_H / 2, t: 0,
+      life: F_SCOREHOLD + 30, text: '+' + fmtScore(roundWin),
+      big: winTier >= 2,
+    });
+  }
+  spawnPopParticles();
+  currentState = STATE.PRE_HOLD;
+  stateTimer = 0;
+}
+function afterScore() {
+  // 5 張全中 → 起始倍數加倍 [§一般遊戲 E47]
+  const n = handResult ? handResult.cells.length : 0;
+  if (n >= COLS) { currentState = STATE.MULT_BOOST; stateTimer = 0; return; }
+  currentState = STATE.RESPIN_PREP;
+  stateTimer = 0;
+}
+function doRespin() {
+  roundIdx++;
+  if (roundIdx >= ODDS.maxRound) { endSpin(); return; }
+  // 得分後新增 1 張功能卡（最多 5 張）[§一般遊戲 D41]
+  if (features.length < MAX_FEAT) features.push(newFeature());
+  const n = handResult ? handResult.cells.length : 0;
+  const cols = [];
+  if (n >= COLS) {
+    for (let c = 0; c < COLS; c++) cols.push(true);              // 全部重轉 [§一般遊戲 E46]
+  } else {
+    const keep = new Set(handResult.cells);
+    for (let c = 0; c < COLS; c++) cols.push(!keep.has(c));      // 鎖定得分牌 [§一般遊戲 E44]
+  }
+  winCells = null;
+  handLabelText = 'AGAIN';                                       // [§美術 F63]
+  handLabelKind = 'again';
+  features.forEach(f => { f.triggered = false; });
+  drawRespinUsed = 0;
+  beginReels(cols);
+}
+function doDrawRespin() {
+  drawRespinUsed++;
+  const cols = [];
+  for (let c = 0; c < COLS; c++) cols.push(c === drawInfo.cell);   // 只重轉缺的那一張
+  // 此重轉不新增功能卡 [§一般遊戲 E51]
+  winCells = null;
+  drawInfo = null;
+  beginReels(cols);
+}
+
+function endSpin() {
+  winCells = null; handResult = null; drawInfo = null;
+  drawRespinUsed = 0; freeRespins = 0;
+  handLabelText = ''; handLabelKind = '';
+  for (let c = 0; c < COLS; c++) board[c][0].locked = false;
+  if (hasHitThisSpin) stats.hits++;
+  if (inFG) fgWin += spinWin;
+  const ratio = spinWin / Math.max(1, ODDS.bet);
+  bigWinLabel = ratio >= FX.epicWinRatio  ? 'EPIC WIN'
+              : ratio >= FX.megaWinRatio  ? 'MEGA WIN'
+              : ratio >= FX.superWinRatio ? 'SUPER WIN'
+              : ratio >= FX.bigWinRatio   ? 'BIG WIN' : '';
+  if (bigWinLabel) { currentState = STATE.BIGWIN; stateTimer = 0; return; }
+  afterBigWin();
+}
+function afterBigWin() {
+  bigWinLabel = '';
+  if (!inFG && fgPending) { currentState = STATE.FG_ENTER; stateTimer = 0; return; }
+  if (inFG) {
+    fgLeft--;
+    if (fgLeft <= 0) { currentState = STATE.FG_END; stateTimer = 0; return; }
+  } else if (isAutoSpinning && autoSpinCount > 0) {
+    autoSpinCount--;
+    if (autoSpinCount === 0) isAutoSpinning = false;
+  }
+  if (!inFG) freeCount = 0;                 // 未集滿則局末重置 [§一般遊戲 E67]
+  currentState = STATE.IDLE;
+  stateTimer = 0;
+}
+
+/* ---------- 開局 ---------- */
+function startSpin() {
+  if (currentState !== STATE.IDLE || isPaused) return;
+  const buy = forceSpinType;
+  forceActive = buy;
+  spinWin = 0; displayScore = 0; roundIdx = 0;
+  scoredKeys = new Set();
+  hasHitThisSpin = false;
+  handResult = null; winCells = null; drawInfo = null;
+  drawRespinUsed = 0; freeRespins = 0;
+  particles = []; floatTexts = []; wildBeams = [];
+  handLabelText = ''; handLabelKind = '';
+
+  if (!inFG) {
+    stats.spins++;
+    startMult = 1;                          // 局末重置為 ×1（使用者決議 #2）
+    freeCount = 0;
+    fgPending = false;
+    isSFG = false;
+    // 購買選項 [§一般遊戲 D22:E26]（demo 不做扣款，只還原進入狀態）
+    features = rollFeatures(
+      (buy === 'buy3f') ? 3 : (buy === 'buy5f' || buy === 'buysf') ? 5 : undefined);
+    if (buy === 'buyhunt') freeCount = 1;   // FREE HUNT：預收集 1 個
+    if (buy === 'buyfree' || buy === 'buysf') { fgPending = true; isSFG = (buy === 'buysf'); }
+  }
+  // FG 中：功能卡與起始倍數持續保留，不重置 [§FREE GAME D29]
+
+  const cols = [];
+  for (let c = 0; c < COLS; c++) cols.push(true);
+  beginReels(cols);
+}
+
+/* ---------- 粒子 ---------- */
+function spawnPopParticles() {
+  const tier = POP_TIERS[winTier] || POP_TIERS[1];
+  if (!tier || !winCells) return;
+  const style = CHOICE.popStyle;
+  winCells.forEach(c => {
+    const cx = GRID_X + c * CARD_W + CARD_W / 2;
+    const cy = GRID_Y + CARD_H / 2;
+    const n = style === 2 ? Math.round(tier.count * 0.4) : tier.count;
+    for (let i = 0; i < n; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const sp = 2 + Math.random() * 6;
+      particles.push({
+        x: cx, y: cy,
+        vx: Math.cos(ang) * sp,
+        vy: style === 1 ? Math.abs(Math.sin(ang) * sp) : Math.sin(ang) * sp,
+        g: style === 1 ? 0.35 : 0.08,
+        life: 0, maxLife: 30 + Math.random() * 16,
+        size: 3 + Math.random() * tier.size,
+        color: SYMBOLS[board[c][0].id].color,
+      });
+    }
+    if (tier.ring > 0 && style === 0) {
+      particles.push({ ring: true, x: cx, y: cy, life: 0, maxLife: 20, r: tier.ring, flash: tier.flash });
+    }
+  });
+}
+
+/* ---------- 跳過 ---------- */
+function skipCurrent() {
+  if (currentState === STATE.SPINNING) {
+    for (let c = 0; c < COLS; c++) if (!colStopped[c]) landCol(c);
+    return true;
+  }
+  const jump = {};
+  jump[STATE.FREE_COLLECT] = F_FREECOL;
+  jump[STATE.WILD_CONVERT] = F_SYMFX;
+  jump[STATE.SHOWING_WIN]  = F_WINHOLD + F_CARDLOCK;
+  jump[STATE.FEAT_APPLY]   = F_FEAT;
+  jump[STATE.PRE_HOLD]     = F_PRE[winTier] || 0;
+  jump[STATE.SCORE_RUN]    = F_SCOREAPPEAR;
+  jump[STATE.POST_HOLD]    = F_POST[winTier] || 0;
+  jump[STATE.MULT_BOOST]   = F_MULTBOOST;
+  jump[STATE.DRAW_HINT]    = F_DRAWHINT;
+  jump[STATE.BIGWIN]       = F_BIGWIN;
+  jump[STATE.FG_ENTER]     = F_FGENTER;
+  jump[STATE.FG_END]       = F_FGENTER;
+  if (jump[currentState] !== undefined) {
+    if (currentState === STATE.FEAT_APPLY) {
+      // 一次套完剩下的功能卡
+      while (featCursor + 1 < featOrder.length) { featCursor++; applyFeatureAt(featOrder[featCursor]); }
+      stateTimer = F_FEAT;
+    } else {
+      stateTimer = jump[currentState];
+    }
+    return true;
+  }
+  return false;
+}
+
+/* ---------- 主更新 ---------- */
+function update() {
+  if (isPaused) return;
+  for (let c = 0; c < COLS; c++) {
+    if (colBounce[c] > 0.2) colBounce[c] *= BOUNCE_DECAY; else colBounce[c] = 0;
+  }
+  if (shakeAmp > 0.1) shakeAmp *= 0.88; else shakeAmp = 0;
+  if (zoomAmp > 1.001) zoomAmp = 1 + (zoomAmp - 1) * 0.94; else zoomAmp = 1;
+  features.forEach(f => { if (f.flash > 0) f.flash = Math.max(0, f.flash - 0.04); });
+  wildBeams.forEach(b => { b.t++; });
+
+  particles = particles.filter(p => {
+    p.life++;
+    if (!p.ring) { p.x += p.vx; p.y += p.vy; p.vy += p.g; }
+    return p.life < p.maxLife;
+  });
+  floatTexts = floatTexts.filter(f => { f.t++; return f.t < f.life; });
+
+  switch (currentState) {
+    case STATE.SPINNING: updateSpinning(); break;
+
+    case STATE.FREE_COLLECT:
+      stateTimer++;
+      if (stateTimer >= F_FREECOL) {
+        freeRespins++;
+        const cols = [];
+        for (let c = 0; c < COLS; c++) cols.push(board[c][0].id === FREE_ID);
+        beginReels(cols);                       // 重轉該輪 [§一般遊戲 E65]
+      }
+      break;
+
+    case STATE.WILD_CONVERT:
+      stateTimer++;
+      if (stateTimer >= F_SYMFX) { wildBeams = []; currentState = STATE.CHECKING; stateTimer = 0; }
+      break;
+
+    case STATE.CHECKING: enterChecking(); break;
+
+    case STATE.SHOWING_WIN:
+      stateTimer++;
+      if (stateTimer >= F_WINHOLD + F_CARDLOCK) {
+        featCursor = -1;
+        if (featOrder.length === 0) { finishFeatures(); }
+        else { currentState = STATE.FEAT_APPLY; stateTimer = F_FEAT; }
+      }
+      break;
+
+    case STATE.FEAT_APPLY:
+      stateTimer++;
+      if (stateTimer >= F_FEAT) {
+        featCursor++;
+        if (featCursor < featOrder.length) { applyFeatureAt(featOrder[featCursor]); stateTimer = 0; }
+        else finishFeatures();
+      }
+      break;
+
+    case STATE.PRE_HOLD:
+      stateTimer++;
+      if (stateTimer >= (F_PRE[winTier] || 0)) {
+        currentState = STATE.SCORE_RUN; stateTimer = 0;
+      }
+      break;
+
+    case STATE.SCORE_RUN:
+      stateTimer++;
+      {
+        const k = Math.min(1, stateTimer / Math.max(1, F_SCOREAPPEAR));
+        displayScore = scoreFrom + (spinWin - scoreFrom) * k;
+      }
+      if (stateTimer >= F_SCOREAPPEAR) {
+        displayScore = spinWin;
+        currentState = STATE.POST_HOLD; stateTimer = 0;
+      }
+      break;
+
+    case STATE.POST_HOLD:
+      stateTimer++;
+      if (stateTimer >= (F_POST[winTier] || 0) + F_SCOREHOLD) afterScore();
+      break;
+
+    case STATE.MULT_BOOST:
+      stateTimer++;
+      // [§一般遊戲 E47]。企劃未寫上限，用 [自設] 的 maxStartMult 收斂，否則單局贏分會失控
+      if (stateTimer === 1) startMult = Math.min(ODDS.maxStartMult, startMult * 2);
+      if (stateTimer >= F_MULTBOOST) { currentState = STATE.RESPIN_PREP; stateTimer = 0; }
+      break;
+
+    case STATE.RESPIN_PREP:
+      stateTimer++;
+      if (stateTimer >= F_RESPIN) doRespin();
+      break;
+
+    case STATE.DRAW_HINT:
+      stateTimer++;
+      if (stateTimer >= F_DRAWHINT) doDrawRespin();
+      break;
+
+    case STATE.BIGWIN:
+      stateTimer++;
+      if (stateTimer >= F_BIGWIN) afterBigWin();
+      break;
+
+    case STATE.FG_ENTER:
+      stateTimer++;
+      if (stateTimer >= F_FGENTER) {
+        inFG = true;
+        fgLeft = ODDS.fgSpins;
+        fgWin = 0;
+        freeCount = 0;
+        fgPending = false;
+        // SFG：以已累積 5 張功能卡的狀態進入 [§FREE GAME E31]
+        if (isSFG) features = rollFeatures(MAX_FEAT);
+        currentState = STATE.IDLE; stateTimer = 0;
+      }
+      break;
+
+    case STATE.FG_END:
+      stateTimer++;
+      if (stateTimer >= F_FGENTER) {
+        inFG = false; isSFG = false;
+        startMult = 1; freeCount = 0;
+        currentState = STATE.IDLE; stateTimer = 0;
+      }
+      break;
+
+    case STATE.IDLE:
+      stateTimer++;
+      if (inFG && fgLeft > 0) {
+        if (stateTimer >= F_FGGAP) startSpin();
+      } else if (isAutoSpinning) {
+        if (stateTimer >= F_AUTO) startSpin();
+      }
+      break;
+  }
+}
+
+
+/* ============================================================
+ * 區塊 5：繪製
+ * 盤面為 1×5 撲克牌；上方功能列＋得分欄＋倍數欄；右側 FREE 燈條。
+ * 下方公版面板（drawUI / UI_SLOT）是跨遊戲共用的，不要改。
+ * ========================================================== */
+
+// 撲克牌繪製：有素材走素材，缺件退回程式繪製（牌面文字＋花色）
+function drawCard(cell, x, y, w, h, alpha) {
+  const id = cell.id;
+  const s = SYMBOLS[id];
+  ctx.save();
+  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  if (!drawArtCell(iconImgs[id], x, y, w, h, CELL_R)) {
+    if (s.wild) {
+      roundRect(x, y, w, h, CELL_R, 'rgba(120,72,10,.92)', '#facc15', 3);
+      ctx.fillStyle = '#facc15';
+      ctx.font = 'bold 40px serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🌟', x + w / 2, y + h / 2 - 12);
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillText('WILD', x + w / 2, y + h / 2 + 34);
+    } else if (s.free) {
+      roundRect(x, y, w, h, CELL_R, 'rgba(8,70,84,.92)', '#22d3ee', 3);
+      ctx.fillStyle = '#67e8f9';
+      ctx.font = 'bold 40px serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🛰️', x + w / 2, y + h / 2 - 12);
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillText('FREE', x + w / 2, y + h / 2 + 34);
+    } else {
+      // 標準撲克牌：白底、四角點數、中央花色
+      roundRect(x, y, w, h, CELL_R, '#f1f5f9', '#0f172a', 2);
+      const col = (s.suit === 1 || s.suit === 2) ? '#dc2626' : '#0f172a';
+      const rk = RANKS[s.rank], sg = suitGlyph(s.suit);
+      ctx.fillStyle = col;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.font = 'bold 26px Arial';
+      ctx.fillText(rk, x + 10, y + 8);
+      ctx.font = '20px ' + SUIT_FONT;
+      ctx.fillText(sg, x + 11, y + 36);
+      ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+      ctx.font = 'bold 26px Arial';
+      ctx.fillText(rk, x + w - 10, y + h - 8);
+      ctx.font = '20px ' + SUIT_FONT;
+      ctx.fillText(sg, x + w - 11, y + h - 36);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = '64px ' + SUIT_FONT;
+      ctx.fillText(sg, x + w / 2, y + h / 2 + 2);
+      // 轉換 WILD 後保留原牌階的標記 [§一般遊戲 H81]
+      if (cell.origId !== null) {
+        ctx.fillStyle = 'rgba(250,204,21,.28)';
+        ctx.beginPath(); ctx.roundRect(x, y, w, h, CELL_R); ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function drawBoard() {
+  const now = Date.now();
+  ctx.save();
+  // 得分層級的震動與鏡頭拉近 [§高倍得分層級設計 D/J 欄]
+  const cx = GRID_X + GRID_W / 2, cy = GRID_Y + GRID_H / 2;
+  if (zoomAmp !== 1 || shakeAmp > 0) {
+    ctx.translate(cx, cy);
+    ctx.scale(zoomAmp, zoomAmp);
+    ctx.translate(-cx, -cy);
+    if (shakeAmp > 0) {
+      ctx.translate((Math.random() - 0.5) * shakeAmp, (Math.random() - 0.5) * shakeAmp);
+    }
+  }
+
+  if (showGridFrame) {
+    roundRect(GRID_X - 10, GRID_Y - 10, GRID_W + 20, GRID_H + 20, 18,
+      'rgba(2,6,23,.78)', '#334155', 2);
+  }
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(GRID_X - 2, GRID_Y, GRID_W + 4, GRID_H);
+  ctx.clip();
+
+  for (let c = 0; c < COLS; c++) {
+    const x = GRID_X + c * CARD_W;
+    const off = colOffsets[c] + (colBounce[c] || 0);
+    const isWin = winCells && winCells.has(c);
+    const dim = winCells && !isWin ? FX.dimAlpha : 1;
+    const lockedNow = board[c][0].locked;
+    // 轉動中：上方預備牌接續在畫面外
+    if (!colStopped[c]) {
+      drawCard(board[c][1], x + 5, GRID_Y + off - CARD_H + 4, CARD_W - 10, CARD_H - 8, 1);
+    }
+    const cell = board[c][0];
+    let dy = GRID_Y + off + 4;
+    if (cell.scale < 1) {
+      ctx.save();
+      ctx.translate(x + CARD_W / 2, GRID_Y + CARD_H / 2);
+      ctx.scale(cell.scale, cell.scale);
+      ctx.translate(-(x + CARD_W / 2), -(GRID_Y + CARD_H / 2));
+      drawCard(cell, x + 5, dy, CARD_W - 10, CARD_H - 8, dim);
+      ctx.restore();
+    } else {
+      drawCard(cell, x + 5, dy, CARD_W - 10, CARD_H - 8, dim);
+    }
+    // 鎖定框（重轉時保留的得分牌）
+    if (lockedNow && colStopped[c] && !winCells) {
+      ctx.save();
+      ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 3;
+      ctx.shadowColor = '#22c55e'; ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.roundRect(x + 5, GRID_Y + 4, CARD_W - 10, CARD_H - 8, CELL_R);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // 差一張預報：要重轉的那一格 [§一般遊戲 F110]
+    if (drawInfo && drawInfo.cell === c && currentState === STATE.DRAW_HINT) {
+      const pulse = 0.5 + 0.5 * Math.sin(now / 160);
+      ctx.save();
+      ctx.strokeStyle = '#c084fc'; ctx.lineWidth = 4;
+      ctx.shadowColor = '#c084fc'; ctx.shadowBlur = 30 * pulse;
+      ctx.setLineDash([10, 6]);
+      ctx.beginPath();
+      ctx.roundRect(x + 3, GRID_Y + 2, CARD_W - 6, CARD_H - 4, CELL_R);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+
+  // 得分框（三級）
+  if (winCells && showPaylines) {
+    const t = WIN_FRAME_TIERS[winTier] || WIN_FRAME_TIERS[1];
+    const pulse = 0.55 + 0.45 * Math.sin(now / Math.max(20, t.speed));
+    ctx.save();
+    ctx.strokeStyle = t.color;
+    ctx.lineWidth = t.lineW;
+    ctx.shadowColor = t.color;
+    ctx.shadowBlur = t.blur * pulse;
+    winCells.forEach(c => {
+      ctx.beginPath();
+      ctx.roundRect(GRID_X + c * CARD_W + 4, GRID_Y + 3, CARD_W - 8, CARD_H - 6, CELL_R);
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  // 轉換 WILD 的光子：向下傳遞 [§美術需求說明 H29]
+  wildBeams.forEach(bm => {
+    const k = (bm.t % Math.max(1, FX.wildBeamSpeed / 16)) / Math.max(1, FX.wildBeamSpeed / 16);
+    const x = GRID_X + bm.c * CARD_W + CARD_W / 2;
+    ctx.save();
+    ctx.globalAlpha = 1 - k;
+    ctx.fillStyle = '#c084fc';
+    for (let i = 0; i < 4; i++) {
+      const y = GRID_Y - 40 + (CARD_H + 40) * ((k + i * 0.25) % 1);
+      ctx.beginPath();
+      ctx.rect(x - 4 + (i % 2) * 8 - 4, y, 6, 6);
+      ctx.fill();
+    }
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+// 功能列：每局 1~5 張功能卡 [§一般遊戲 D40]
+function drawFeatureRow() {
+  const o = LAYOUT.featureRow;
+  const now = Date.now();
+  const slotW = o.w / MAX_FEAT;
+  for (let i = 0; i < MAX_FEAT; i++) {
+    const x = o.x + i * slotW + 6, y = o.y, w = slotW - 12, h = o.h;
+    const f = features[i];
+    if (!f) {
+      // 未啟動＝半透明無彩度 [§美術需求說明 E20]
+      roundRect(x, y, w, h, 12, 'rgba(30,41,59,.45)', 'rgba(100,116,139,.5)', 1.5);
+      continue;
+    }
+    const t = FEAT_TYPES[f.type];
+    const high = isHighFeat(f);
+    const breath = 0.75 + 0.25 * Math.sin(now / Math.max(100, FX.featBreath));
+    ctx.save();
+    if (f.triggered || f.flash > 0) {
+      ctx.shadowColor = t.color;
+      ctx.shadowBlur = FX.featGlow * (f.flash > 0 ? 1 : breath);
+    } else if (high) {
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = FX.featGlow * 0.7 * breath;
+    }
+    const bg = t.cat === 'score' ? 'rgba(113,78,6,.90)'
+             : t.cat === 'mult'  ? 'rgba(12,58,94,.90)'
+                                 : 'rgba(72,32,110,.90)';
+    roundRect(x, y, w, h, 12, bg, t.color, high ? 3 : 2);
+    ctx.restore();
+    // 功能無效＝轉灰階 [§美術需求說明]
+    const inactive = !f.triggered && (currentState === STATE.FEAT_APPLY
+      || currentState === STATE.PRE_HOLD || currentState === STATE.SCORE_RUN);
+    ctx.save();
+    ctx.globalAlpha = inactive ? 0.45 : 1;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = t.color;
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(t.name, x + w / 2, y + 16);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 26px Arial';
+    ctx.fillText(featLabel(f), x + w / 2, y + h / 2 + 4);
+    // 指定牌階（花色要用符號字型，否則被 emoji 字型接手）
+    const tl = TIERS[f.tier];
+    ctx.fillStyle = '#e2e8f0';
+    if (tl.kind === 'suit') {
+      ctx.font = 'bold 19px ' + SUIT_FONT;
+      ctx.fillText(suitGlyph(tl.v), x + w / 2, y + h - 16);
+    } else {
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillText(tl.label, x + w / 2, y + h - 16);
+    }
+    ctx.restore();
+    if (high) {
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+      ctx.fillText('HIGH', x + w - 5, y + 4);
+      ctx.restore();
+    }
+  }
+}
+
+// 左上黃框＝得分；右上藍框＝起始倍數 [§一般遊戲 D30/D31]
+function drawScoreBoxes() {
+  const sb = LAYOUT.scoreBox, mb = LAYOUT.multBox;
+  const showScore = (currentState === STATE.IDLE && spinWin === 0) ? 0 : displayScore;
+  const hi = isHighScore(showScore);
+
+  roundRect(sb.x, sb.y, sb.w, sb.h, 12, 'rgba(66,45,4,.88)', '#facc15', 2.5);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fde68a'; ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('得分 SCORE', sb.x + 14, sb.y + 17);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = hi ? '#fb7185' : '#fff';           // 高倍變色 [§一般遊戲 F125]
+  ctx.font = 'bold 30px Arial';
+  ctx.fillText(fmtScore(showScore), sb.x + sb.w - 14, sb.y + sb.h - 22);
+
+  roundRect(mb.x, mb.y, mb.w, mb.h, 12, 'rgba(8,43,74,.88)', '#38bdf8', 2.5);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#bae6fd'; ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('起始倍數 MULTIPLIER', mb.x + 14, mb.y + 17);
+  ctx.textAlign = 'right';
+  // 只有「套用功能卡→結算」這幾個階段才顯示加成後的 curMult；
+  // 其餘（待機／轉動／預報／重轉）顯示本局目前的起始倍數。
+  const inSettle = currentState === STATE.FEAT_APPLY || currentState === STATE.PRE_HOLD
+    || currentState === STATE.SCORE_RUN || currentState === STATE.POST_HOLD;
+  const showMult = inSettle ? curMult : startMult;
+  ctx.fillStyle = showMult > 1 ? '#facc15' : '#fff';
+  ctx.font = 'bold 30px Arial';
+  ctx.fillText('×' + showMult, mb.x + mb.w - 14, mb.y + mb.h - 22);
+  if (currentState === STATE.MULT_BOOST) {
+    const k = stateTimer / Math.max(1, F_MULTBOOST);
+    ctx.save();
+    ctx.globalAlpha = 1 - k;
+    ctx.strokeStyle = '#facc15'; ctx.lineWidth = 4;
+    ctx.shadowColor = '#facc15'; ctx.shadowBlur = 30;
+    ctx.beginPath();
+    ctx.roundRect(mb.x - 6 * k, mb.y - 6 * k, mb.w + 12 * k, mb.h + 12 * k, 14);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// 右側 FREE 收集計量條 [§一般遊戲 E65]；2 個時快速紅色呼吸 [§美術 F41]
+function drawFreeMeter() {
+  const o = LAYOUT.freeMeter;
+  const now = Date.now();
+  const need = Math.max(1, ODDS.fgFree);
+  const alert = (freeCount === need - 1) && !inFG;      // 差 1 個＝進 FG 預報
+  const drawAlert = currentState === STATE.DRAW_HINT;
+  roundRect(o.x, o.y, o.w, o.h, 12, 'rgba(2,6,23,.8)', alert ? '#f87171' : '#475569', 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#94a3b8'; ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('FREE', o.x + o.w / 2, o.y + 15);
+  const cellH = (o.h - 34) / need;
+  for (let i = 0; i < need; i++) {
+    const on = i < freeCount;
+    const y = o.y + o.h - 8 - (i + 1) * cellH + 3;
+    let fill = 'rgba(51,65,85,.7)', edge = '#475569';
+    if (on) { fill = 'rgba(8,70,84,.95)'; edge = '#22d3ee'; }
+    ctx.save();
+    if (alert) {
+      const b = 0.4 + 0.6 * Math.sin(now / Math.max(80, FX.meterBreath));
+      ctx.shadowColor = '#f87171'; ctx.shadowBlur = 26 * b;
+      edge = '#f87171';
+    } else if (drawAlert) {
+      const b = 0.4 + 0.6 * Math.sin(now / Math.max(80, FX.meterBreath * 1.6));
+      ctx.shadowColor = '#c084fc'; ctx.shadowBlur = 22 * b;
+      edge = '#c084fc';
+    } else if (on) {
+      ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 12;
+    }
+    roundRect(o.x + 8, y, o.w - 16, cellH - 6, 8, fill, edge, 2);
+    ctx.restore();
+    if (on) {
+      ctx.fillStyle = '#67e8f9'; ctx.font = '20px serif';
+      ctx.fillText('🛰️', o.x + o.w / 2, y + (cellH - 6) / 2);
+    }
+  }
+  ctx.fillStyle = alert ? '#fca5a5' : '#cbd5e1';
+  ctx.font = 'bold 13px Arial';
+  ctx.fillText(freeCount + '/' + need, o.x + o.w / 2, o.y + o.h - 12);
+}
+
+// 牌型資訊：牌型名 / XXX DRAW / AGAIN [§美術需求說明 E61/F63]
+function drawHandLabel() {
+  if (!handLabelText) return;
+  const o = LAYOUT.handLabel;
+  const col = handLabelKind === 'draw' ? '#c084fc'
+            : handLabelKind === 'again' ? '#34d399' : '#facc15';
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = col; ctx.shadowBlur = 18;
+  ctx.fillStyle = col;
+  ctx.font = 'bold 30px Arial';
+  ctx.fillText(handLabelText, o.x, o.y);
+  // 差一張時列出可完成的牌（≥2 張時輪流顯示）[§一般遊戲 F110/F111]
+  if (handLabelKind === 'draw' && drawInfo && drawInfo.needs.length) {
+    const idx = Math.floor(Date.now() / 700) % drawInfo.needs.length;
+    const id = drawInfo.needs[idx];
+    const s = SYMBOLS[id];
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#e9d5ff';
+    ctx.font = 'bold 19px ' + SUIT_FONT;
+    ctx.fillText('需要 ' + RANKS[s.rank] + suitGlyph(s.suit)
+      + (drawInfo.needs.length > 1 ? '（共 ' + drawInfo.needs.length + ' 種）' : ''), o.x, o.y + 30);
+  }
+  ctx.restore();
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    const k = 1 - p.life / p.maxLife;
+    if (p.ring) {
+      ctx.save();
+      ctx.globalAlpha = k;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * (1 - k), 0, Math.PI * 2);
+      ctx.stroke();
+      if (p.flash > 0) {
+        ctx.globalAlpha = k * p.flash;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r * (1 - k) * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      return;
+    }
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * k, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+  floatTexts.forEach(f => {
+    const k = f.t / f.life;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - k);
+    ctx.fillStyle = '#facc15';
+    ctx.font = 'bold ' + (f.big ? 52 : 40) + 'px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#000'; ctx.shadowBlur = 8;
+    ctx.fillText(f.text, f.x, f.y - k * 70);
+    ctx.restore();
+  });
+}
+
+function drawFGCounter() {
+  if (!inFG) return;
+  const o = LAYOUT.fgCounter;
+  roundRect(o.x, o.y, o.w, o.h, 14, 'rgba(88,28,135,.85)',
+    isSFG ? '#f472b6' : '#c084fc', 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = isSFG ? '#fbcfe8' : '#f5d0fe';
+  ctx.font = 'bold 13px Arial';
+  ctx.fillText(isSFG ? 'SUPER FREE' : 'FREE SPINS', o.x + o.w / 2, o.y + 20);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 34px Arial';
+  ctx.fillText(String(fgLeft), o.x + o.w / 2, o.y + o.h / 2 + 8);
+  ctx.fillStyle = '#facc15'; ctx.font = 'bold 13px Arial';
+  ctx.fillText(fmtScore(fgWin), o.x + o.w / 2, o.y + o.h - 14);
+}
+
+function drawStatsBar() {
+  if (!showStatsPanel) return;
+  const o = LAYOUT.statsBar;
+  ctx.fillStyle = 'rgba(0,0,0,.55)';
+  ctx.fillRect(o.x, o.y, W, 70);
+  const items = [
+    { label: 'SPINS',     value: stats.spins },
+    { label: 'TOTAL BET', value: stats.spins * ODDS.bet },
+    { label: 'TOTAL WIN', value: Math.round(totalScore) },
+    { label: 'RTP',       value: stats.spins > 0 ? (totalScore / (stats.spins * ODDS.bet) * 100).toFixed(2) + '%' : '0.00%' },
+    { label: 'HIT RATE',  value: stats.spins > 0 ? (stats.hits / stats.spins * 100).toFixed(0) + '%' : '0%' },
+  ];
+  const itemW = W / items.length;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  items.forEach((it, i) => {
+    const cx = o.x + itemW * i + itemW / 2;
+    ctx.fillStyle = '#94a3b8'; ctx.font = '13px Arial';
+    ctx.fillText(it.label, cx, o.y + 8);
+    ctx.fillStyle = it.label === 'TOTAL WIN' ? '#facc15' : (it.label === 'RTP' ? '#c084fc' : '#fff');
+    ctx.font = 'bold 18px Arial';
+    ctx.fillText(String(it.value), cx, o.y + 28);
+  });
+  const toggles = [
+    { key: 'paylines', label: '得分框',   on: showPaylines },
+    { key: 'popup',    label: '得分浮字', on: showScorePopup },
+    { key: 'frame',    label: '盤面外框', on: showGridFrame },
+  ];
+  const bw = 150, bh = 28, gap = 12;
+  const totalW = toggles.length * bw + (toggles.length - 1) * gap;
+  const bx0 = (W - totalW) / 2, by0 = o.y + 74;
+  statToggleRects = [];
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  toggles.forEach((t, i) => {
+    const bx = bx0 + i * (bw + gap);
+    roundRect(bx, by0, bw, bh, 8,
+      t.on ? 'rgba(34,197,94,.85)' : 'rgba(51,65,85,.85)',
+      t.on ? '#22c55e' : '#475569', 2);
+    ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 13px sans-serif';
+    ctx.fillText(t.label + '：' + (t.on ? 'ON' : 'OFF'), bx + bw / 2, by0 + bh / 2 + 1);
+    statToggleRects.push({ x: bx, y: by0, w: bw, h: bh, key: t.key });
+  });
+}
+
+
+// === 下方公版面板（固定沿用海克力斯的公版）=====================
+// 素材 assets/public_ui.png（1280×126）貼齊畫面底部，內含玩家頭像／名稱／星幣／
+// BET 框／WIN／i／⚡／SPIN／AUTO 的外觀。程式只負責四件事：
+//   1) BET / WIN 動態數字補丁（蓋掉素材內建的占位數字）
+//   2) 按鈕狀態框（SPIN 壓暗/hover、AUTO 紅框+次數、i 開啟框）
+//   3) 強開鈕（疊在左下玩家頭像上）與上拉選單
+//   4) 素材缺件時整條退回程式繪製，版位與素材一致
+// 版位常數集中在 UI_SLOT；判定區與繪製共用同一組座標，整列跟著 LAYOUT.bottomUI 位移。
+function drawUI() {
+  const ux = LAYOUT.bottomUI.x, uy = LAYOUT.bottomUI.y;
+  const barY = uy - 46;                       // 素材頂緣（uy=640 → 594）
+  const useArt = !!sceneImgs.publicUI;
+  const sb = LAYOUT.spinBtn, ab = LAYOUT.autoBtn;
+  const spinCX = sb.x + sb.w / 2, spinCY = sb.y + sb.h / 2, spinR = Math.min(sb.w, sb.h) / 2;
+  const S = UI_SLOT;
+  ctx.textBaseline = 'middle';
+
+  if (useArt) {
+    ctx.drawImage(sceneImgs.publicUI, ux, barY, 1280, 126);
+    // BET 動態數字
+    roundRect(S.betPatch.x + ux, barY + S.betPatch.dy, S.betPatch.w, S.betPatch.h, 4, '#0a0a0a', null, 0);
+    ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 21px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(String(ODDS.bet), S.betText.x + ux, barY + S.betText.dy);
+    // WIN 動態數字
+    ctx.fillStyle = '#0d0d0d';
+    ctx.fillRect(S.winPatch.x + ux, barY + S.winPatch.dy, S.winPatch.w, S.winPatch.h);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 26px sans-serif';
+    ctx.fillText(fmtScore(displayScore), S.winText.x + ux, barY + S.winText.dy);
+    // i 鈕：開啟時亮框
+    if (infoPanel.classList.contains('visible')) {
+      roundRect(S.infoBtn.x + ux, barY + S.infoBtn.dy, S.infoBtn.w, S.infoBtn.h, 12, null, '#38bdf8', 2);
+    }
+  } else {
+    // --- 程式繪製退回版：版位比照公版素材，之後把 public_ui.png 丟進 assets/ 就自動接上 ---
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(ux, barY, 1280, 126);
+    ctx.strokeStyle = '#3f3f46'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ux, barY); ctx.lineTo(ux + 1280, barY); ctx.stroke();
+    // 玩家頭像／名稱／星幣
+    ctx.fillStyle = '#334155';
+    ctx.beginPath(); ctx.arc(ux + 62, barY + 63, 44, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#facc15'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(ux + 62, barY + 63, 44, 0, Math.PI * 2); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.font = '34px serif'; ctx.fillStyle = '#e2e8f0';
+    ctx.fillText('🙂', ux + 62, barY + 66);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 19px sans-serif';
+    ctx.fillText(PLAYER.name, ux + 336, barY + 44);
+    ctx.fillStyle = '#facc15'; ctx.font = 'bold 17px sans-serif';
+    ctx.fillText('★ 星幣 ' + PLAYER.coin.toLocaleString(), ux + 336, barY + 82);
+    ctx.textAlign = 'center';
+    // BET 框
+    roundRect(S.betPatch.x + ux, barY + 30, S.betPatch.w, 82, 6, '#0a0a0a', '#e5e7eb', 2);
+    ctx.fillStyle = '#facc15'; ctx.font = 'bold 17px sans-serif';
+    ctx.fillText('BET', S.betText.x + ux, barY + 50);
+    ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 21px sans-serif';
+    ctx.fillText(String(ODDS.bet), S.betText.x + ux, barY + S.betText.dy);
+    // WIN
+    ctx.fillStyle = '#facc15'; ctx.font = 'bold 20px sans-serif';
+    ctx.fillText('WIN', S.winText.x + ux, barY + 46);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 26px sans-serif';
+    ctx.fillText(fmtScore(displayScore), S.winText.x + ux, barY + S.winText.dy);
+    // i 鈕
+    roundRect(S.infoBtn.x + ux, barY + S.infoBtn.dy, S.infoBtn.w, S.infoBtn.h, 12, 'rgba(15,23,42,.6)',
+      infoPanel.classList.contains('visible') ? '#38bdf8' : '#e5e7eb', 2);
+    ctx.fillStyle = '#f8fafc'; ctx.font = 'italic bold 30px serif';
+    ctx.fillText('i', S.infoBtn.x + ux + S.infoBtn.w / 2, barY + S.infoBtn.dy + 36);
+    // ⚡ 鈕（素材上有，公版未接判定，此處同樣只畫不接）
+    roundRect(S.turboBtn.x + ux, barY + S.turboBtn.dy, S.turboBtn.w, S.turboBtn.h, 34, 'rgba(15,23,42,.6)', '#e5e7eb', 2);
+    ctx.font = '26px serif'; ctx.fillStyle = '#e2e8f0';
+    ctx.fillText('⚡', S.turboBtn.x + ux + S.turboBtn.w / 2, barY + S.turboBtn.dy + 36);
+    // SPIN 大圓鈕
+    ctx.fillStyle = '#0a0a0a';
+    ctx.beginPath(); ctx.arc(spinCX, spinCY, spinR, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(spinCX, spinCY, spinR - 3, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#f8fafc'; ctx.font = '46px serif';
+    ctx.fillText('🔄', spinCX, spinCY + 2);
+    // AUTO 鈕
+    roundRect(ab.x, ab.y, ab.w, ab.h, 34, 'rgba(15,23,42,.6)', '#e5e7eb', 2);
+    ctx.font = '26px serif';
+    ctx.fillText('🔁', ab.x + ab.w / 2, ab.y + ab.h / 2 + 2);
+  }
+
+  // --- 兩種模式共用的狀態框 ---
+  // SPIN：非待機壓暗；可按且滑入時亮白框
+  if (!(currentState === STATE.IDLE && !isAutoSpinning)) {
+    ctx.save();
+    ctx.globalAlpha = 0.45; ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(spinCX, spinCY, spinR, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else if (isMouseHoverSpin) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(spinCX, spinCY, spinR - 2, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+  // AUTO：啟用時紅框＋剩餘次數
+  ctx.textAlign = 'center';
+  if (isAutoSpinning) {
+    roundRect(ab.x, ab.y, ab.w, ab.h, 12, null, '#ef4444', 2.5);
+    ctx.fillStyle = '#ef4444'; ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(autoSpinCount > 0 ? '×' + autoSpinCount : '×∞', ab.x + ab.w / 2, ab.y + ab.h + 12);
+  } else if (isMouseHoverAuto) {
+    roundRect(ab.x, ab.y, ab.w, ab.h, 12, null, 'rgba(255,255,255,.8)', 2);
+  }
+  // 強開（測試選單）：疊在左下玩家頭像上
+  const F = S.forceBtn;
+  roundRect(F.x + ux, uy + F.uy, F.w, F.h, 15,
+    showForceMenu ? '#0f3460' : 'rgba(15,23,42,.85)',
+    showForceMenu ? '#38bdf8' : '#334155', 1.5);
+  ctx.fillStyle = showForceMenu ? '#38bdf8' : '#cbd5e1';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillText('強開 ▲', F.x + ux + F.w / 2, uy + F.uy + F.h / 2);
+
+  ctx.textBaseline = 'alphabetic';
+}
+
+// 強開上拉選單：自強開鈕上方展開（繪製與命中共用 forceMenuRect()）
+// 強開選單：選項多，改成多欄。rects 是繪製與命中的同一份幾何（加選項不用再改幾何）
+function forceMenuRect() {
+  const ux = LAYOUT.bottomUI.x, uy = LAYOUT.bottomUI.y;
+  const opts = forceMenuOptions();
+  const itemH = 32, gap = 4, colW = 132, colGap = 6, perCol = 11;
+  const rows = Math.min(opts.length, perCol);
+  const cols = Math.ceil(opts.length / perCol);
+  const totalH = rows * (itemH + gap) + 6;
+  const mx0 = 35 + ux, my0 = (uy + 13) - totalH - 4;
+  const rects = opts.map((op, i) => ({
+    op: op,
+    x: mx0 + Math.floor(i / perCol) * (colW + colGap),
+    y: my0 + (i % perCol) * (itemH + gap),
+    w: colW, h: itemH,
+  }));
+  return { opts: opts, rects: rects, mx0: mx0, my0: my0, totalH: totalH,
+           panelW: cols * colW + (cols - 1) * colGap };
+}
+function drawForceMenu() {
+  if (!showForceMenu) return;
+  const m = forceMenuRect();
+  roundRect(m.mx0 - 5, m.my0 - 4, m.panelW + 10, m.totalH + 4, 8, 'rgba(8,14,26,.96)', '#334155', 1.5);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  m.rects.forEach(r => {
+    const sel = forceSpinType === r.op.value;
+    roundRect(r.x, r.y, r.w, r.h, 6,
+      sel ? 'rgba(250,204,21,.18)' : '#1e293b',
+      sel ? '#fbbf24' : (r.op.color || '#475569'), 1.5);
+    ctx.fillStyle = sel ? '#fbbf24' : (r.op.color || '#e2e8f0');
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText(r.op.label, r.x + r.w / 2, r.y + r.h / 2);
+  });
+  ctx.textBaseline = 'alphabetic';
+}
+
+// 四階大獎顏色 [§美術需求說明 B76:D81]：BIG 綠 / SUPER 藍 / MEGA 紅 / EPIC 紫
+const BIGWIN_COLORS = {
+  'BIG WIN':   ['#22c55e', '#052e16'],
+  'SUPER WIN': ['#38bdf8', '#082f49'],
+  'MEGA WIN':  ['#f43f5e', '#4c0519'],
+  'EPIC WIN':  ['#a855f7', '#3b0764'],
+};
+function drawOverlayState() {
+  if (currentState === STATE.BIGWIN && bigWinLabel) {
+    const col = BIGWIN_COLORS[bigWinLabel] || ['#facc15', '#422006'];
+    const k = Math.min(1, stateTimer / 12);
+    ctx.save();
+    ctx.fillStyle = 'rgba(2,6,23,.72)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const scale = 0.7 + 0.3 * k;
+    ctx.translate(W / 2, H / 2 - 40);
+    ctx.scale(scale, scale);
+    ctx.shadowColor = col[0]; ctx.shadowBlur = 40;
+    ctx.fillStyle = col[0];
+    ctx.font = 'bold 84px Arial';
+    ctx.fillText(bigWinLabel, 0, 0);
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 56px Arial';
+    ctx.fillText(fmtScore(spinWin), 0, 78);
+    ctx.restore();
+  }
+  if (currentState === STATE.FG_ENTER) {
+    const k = Math.min(1, stateTimer / Math.max(1, F_FGENTER));
+    ctx.save();
+    ctx.fillStyle = 'rgba(59,7,100,' + (0.45 + 0.35 * Math.sin(k * Math.PI)) + ')';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = isSFG ? '#f472b6' : '#c084fc'; ctx.shadowBlur = 34;
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 62px Arial';
+    ctx.fillText(isSFG ? 'SUPER FREE GAME' : 'FREE GAME', W / 2, H / 2 - 26);
+    ctx.font = 'bold 30px Arial';
+    ctx.fillStyle = isSFG ? '#fbcfe8' : '#f5d0fe';
+    ctx.fillText(ODDS.fgSpins + ' FREE SPINS', W / 2, H / 2 + 36);
+    ctx.restore();
+  }
+  if (currentState === STATE.FG_END) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(2,6,23,.72)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#facc15'; ctx.shadowBlur = 30;
+    ctx.fillStyle = '#facc15';
+    ctx.font = 'bold 46px Arial';
+    ctx.fillText('FREE GAME 結束', W / 2, H / 2 - 34);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 62px Arial';
+    ctx.fillText(fmtScore(fgWin), W / 2, H / 2 + 34);
+    ctx.restore();
+  }
+  if (isPaused) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = 'bold 34px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('⏸ 暫停（P 繼續）', W / 2, H / 2);
+    ctx.restore();
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if (!drawArtCell(sceneImgs.bg, 0, 0, W, H, 0)) {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, inFG ? '#2e1065' : '#0c1a2e');
+    g.addColorStop(1, '#050b16');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  drawScoreBoxes();
+  drawFeatureRow();
+  drawBoard();
+  drawFreeMeter();
+  drawFGCounter();
+  drawHandLabel();
+  drawParticles();
+  drawStatsBar();
+  drawUI();
+  drawForceMenu();
+  drawOverlayState();
+  drawLayoutOverlay();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+
+/* ============================================================
+ * 區塊 6：測試面板 / 說明面板 開關
+ * ========================================================== */
+let showStatsPanel = true;
+const statsBtn = document.getElementById('statsBtn');
+statsBtn.addEventListener('click', () => {
+  showStatsPanel = !showStatsPanel;
+  statsBtn.classList.toggle('active', showStatsPanel);
+});
+const infoPanel = document.getElementById('infoPanel');
+const infoBtn = document.getElementById('infoBtn');
+function setInfoOpen(open) {
+  infoPanel.classList.toggle('visible', open);
+  infoBtn.classList.toggle('active', open);
+}
+infoBtn.addEventListener('click', () => setInfoOpen(!infoPanel.classList.contains('visible')));
+document.getElementById('infoClose').addEventListener('click', () => setInfoOpen(false));
+document.getElementById('infoTitle').textContent = GAME_NAME;
+(function buildPayTable() {
+  const t = document.getElementById('infoPayTable');
+  let html = '<tr><th>牌型</th><th>賠率</th><th>得分(押注 ' + ODDS.bet + ')</th></tr>';
+  HANDS.forEach(h => {
+    html += '<tr><td>' + h.name + '</td><td>×' + h.pay + '</td><td>'
+      + Math.round(ODDS.bet * h.pay).toLocaleString('en-US') + '</td></tr>';
+  });
+  t.innerHTML = html;
+})();
+
+/* ============================================================
+ * 區塊 7：調校面板（換遊戲原則上不用動）
+ * ========================================================== */
+const TUNE_KEY = 'crescendo_tuning';
+const TUNE_VERSION = 1;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
+let tunePanelOpen = false, tuneTab = 'timing';
+let layoutSelected = null, layoutDrag = null;
+let layoutFieldRefs = {}, layoutRangeRefs = {};
+const layoutEditMode = () => tunePanelOpen && tuneTab === 'layout';
+
+const tuneBtn = document.getElementById('tuneBtn');
+const tunePanel = document.getElementById('tunePanel');
+const tuneBody = document.getElementById('tuneBody');
+const tuneStatus = document.getElementById('tuneStatus');
+let tuneStatusTimer = null;
+
+function setTuneStatus(text, state) {
+  tuneStatus.textContent = text;
+  tuneStatus.className = state || 'ok';
+  clearTimeout(tuneStatusTimer);
+  tuneStatusTimer = setTimeout(() => { tuneStatus.textContent = ''; tuneStatus.className = ''; }, 2600);
+}
+
+function saveTuning() {
+  try {
+    localStorage.setItem(TUNE_KEY, JSON.stringify({
+      version: TUNE_VERSION, timing: TIMING, timeline: TIMING_START,
+      layout: LAYOUT, fx: FX, odds: ODDS, choice: CHOICE,
+    }));
+    return true;
+  } catch (e) { return false; }
+}
+function clampInto(target, defaults, src, range, fallback) {
+  if (!src) return;
+  for (const k in defaults) {
+    const v = src[k], rg = range[k] || fallback;
+    if (typeof v === 'number' && isFinite(v)) target[k] = Math.min(rg[1], Math.max(rg[0], v));
+  }
+}
+function loadTuning() {
+  try {
+    const d = JSON.parse(localStorage.getItem(TUNE_KEY) || 'null');
+    if (!d || d.version !== TUNE_VERSION) {
+      localStorage.removeItem(TUNE_KEY);
+      // 版本不符（或沒有保存值）→ 一律回到 DEFAULT。
+      // 不重設的話，執行期呼叫（storage 事件／另一分頁是舊版程式）會讓舊值留在物件上。
+      TIMING       = Object.assign({}, DEFAULT_TIMING);
+      TIMING_START = Object.assign({}, DEFAULT_TIMING_START);
+      LAYOUT       = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
+      FX           = Object.assign({}, DEFAULT_FX);
+      ODDS         = Object.assign({}, DEFAULT_ODDS);
+      CHOICE       = Object.assign({}, DEFAULT_CHOICE);
+    }
+    else {
+      clampInto(TIMING, DEFAULT_TIMING, d.timing, TIMING_RANGE, [0, 5]);
+      clampInto(FX,     DEFAULT_FX,     d.fx,     FX_RANGE,     [0, 100]);
+      clampInto(ODDS,   DEFAULT_ODDS,   d.odds,   ODDS_RANGE,   [0, 1000]);
+      if (d.timeline) for (const k in DEFAULT_TIMING_START) {
+        const v = d.timeline[k];
+        if (typeof v === 'number' && isFinite(v)) TIMING_START[k] = Math.min(8, Math.max(0, v));
+      }
+      if (d.layout) for (const k in DEFAULT_LAYOUT) {
+        if (!d.layout[k]) continue;
+        for (const p in DEFAULT_LAYOUT[k]) {
+          const v = d.layout[k][p];
+          if (typeof v === 'number' && isFinite(v)) LAYOUT[k][p] = v;
+        }
+      }
+      if (d.choice && typeof d.choice.popStyle === 'number') {
+        CHOICE.popStyle = Math.min(POP_STYLES.length - 1, Math.max(0, d.choice.popStyle));
+      }
+    }
+  } catch (e) { /* 資料損毀：靜默退回預設 */ }
+  applyTuning();
+  syncLayoutDerived();
+}
+
+function setTimingValue(key, raw, min, max) {
+  const p = parseFloat(raw);
+  TIMING[key] = Math.min(max, Math.max(min, Number.isFinite(p) ? p : 0));
+  applyTuning(); saveTuning();
+  return TIMING[key];
+}
+function setTimingStartValue(key, raw) {
+  const p = parseFloat(raw);
+  TIMING_START[key] = Math.min(8, Math.max(0, Number.isFinite(p) ? p : 0));
+  saveTuning();
+  return TIMING_START[key];
+}
+function setFxValue(key, raw, min, max) {
+  const p = parseFloat(raw);
+  FX[key] = Math.min(max, Math.max(min, Number.isFinite(p) ? p : 0));
+  applyTuning(); saveTuning();
+  return FX[key];
+}
+function setOddsValue(key, raw, min, max) {
+  const p = parseFloat(raw);
+  ODDS[key] = Math.min(max, Math.max(min, Number.isFinite(p) ? p : 0));
+  applyTuning(); saveTuning();
+  return ODDS[key];
+}
+
+// --- 控制項 1：滑桿＋數字框 ---
+function buildNumberRow(store, key, label, min, max, step, setter) {
+  const row = document.createElement('div'); row.className = 'tune-row';
+  const lab = document.createElement('label'); lab.textContent = label;
+  const rng = document.createElement('input');
+  rng.type = 'range'; rng.min = min; rng.max = max; rng.step = step; rng.value = store[key];
+  const num = document.createElement('input');
+  num.type = 'number'; num.min = min; num.max = max; num.step = step; num.value = store[key];
+  const apply = (v, syncNum) => {
+    const nv = setter(key, v, min, max);
+    rng.value = nv;
+    if (syncNum !== false) num.value = nv;
+    return nv;
+  };
+  rng.addEventListener('input', () => apply(rng.value));
+  num.addEventListener('input', () => {
+    const raw = num.value.trim();
+    if (raw === '' || raw === '-' || raw.charAt(raw.length - 1) === '.') return;
+    apply(raw, false);
+  });
+  num.addEventListener('change', () => { num.value = apply(num.value, true); });
+  row.append(lab, rng, num);
+  return row;
+}
+
+// --- 控制項 2：甘特圖列（拖色條改起點、拖右緣改時長）---
+function buildGanttRow(key, label, min, max, step, color, timelineMax) {
+  const row = document.createElement('div'); row.className = 'gantt-row';
+  const lab = document.createElement('label'); lab.textContent = label;
+  const track = document.createElement('div'); track.className = 'gantt-track';
+  const bar = document.createElement('div'); bar.className = 'gantt-bar'; bar.style.background = color;
+  const handle = document.createElement('div'); handle.className = 'gantt-handle';
+  const startNum = document.createElement('input');
+  startNum.type = 'number'; startNum.min = '0'; startNum.max = '8'; startNum.step = step; startNum.title = '起點（秒）';
+  const durNum = document.createElement('input');
+  durNum.type = 'number'; durNum.min = min; durNum.max = max; durNum.step = step; durNum.title = '時長（秒）';
+
+  const sync = () => {
+    const start = TS(key), dur = TIMING[key];
+    startNum.value = start; durNum.value = dur;
+    const left = Math.max(0, Math.min(100, start / timelineMax * 100));
+    const width = Math.max(1.5, Math.min(100 - left, dur / timelineMax * 100));
+    bar.style.left = left + '%'; bar.style.width = width + '%';
+    bar.title = label + '：' + start.toFixed(2) + 's ~ ' + (start + dur).toFixed(2) + 's';
+  };
+  const applyStart = v => { setTimingStartValue(key, v); sync(); };
+  const applyDur = v => { setTimingValue(key, v, min, max); sync(); };
+  startNum.addEventListener('change', () => applyStart(startNum.value));
+  durNum.addEventListener('change', () => applyDur(durNum.value));
+
+  const beginDrag = (e, mode) => {
+    e.preventDefault();
+    const rect = track.getBoundingClientRect();
+    const startX = e.clientX, baseStart = TS(key), baseDur = TIMING[key];
+    const onMove = ev => {
+      const delta = (ev.clientX - startX) / rect.width * timelineMax;
+      const snapped = Math.round(delta / step) * step;
+      if (mode === 'resize') applyDur(baseDur + snapped); else applyStart(baseStart + snapped);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+  bar.addEventListener('pointerdown', e => beginDrag(e, 'move'));
+  handle.addEventListener('pointerdown', e => beginDrag(e, 'resize'));
+
+  bar.appendChild(handle);
+  track.appendChild(bar);
+  row.append(lab, track, startNum, durNum);
+  sync();
+  return row;
+}
+
+// --- 控制項 3：單選（風格切換）---
+function buildChoiceRows() {
+  const wrap = document.createElement('div');
+  POP_STYLES.forEach((st, i) => {
+    const row = document.createElement('div'); row.className = 'tune-row';
+    const lab = document.createElement('label');
+    lab.style.flex = '0 0 auto';
+    const rb = document.createElement('input');
+    rb.type = 'radio'; rb.name = 'popStyle'; rb.checked = (CHOICE.popStyle === i);
+    rb.style.marginRight = '6px';
+    lab.append(rb, document.createTextNode(st[0]));
+    const d = document.createElement('span');
+    d.style.cssText = 'color:#94a3b8;font-size:11px;';
+    d.textContent = st[1];
+    rb.addEventListener('change', () => {
+      if (!rb.checked) return;
+      CHOICE.popStyle = i; saveTuning();
+      setTuneStatus('消除演繹：' + st[0]);
+    });
+    row.append(lab, d);
+    wrap.appendChild(row);
+  });
+  return wrap;
+}
+
+function buildTimingTab() {
+  tuneBody.innerHTML = '';
+  const hint = document.createElement('div');
+  hint.className = 'tune-hint';
+  hint.textContent = '甘特圖：拖色條改起點、拖右緣改時長；右側兩欄為起點／時長（秒）。即時生效並自動存在瀏覽器。';
+  tuneBody.appendChild(hint);
+  TIMING_META.forEach((g, gi) => {
+    const h = document.createElement('div');
+    h.className = 'tune-group'; h.textContent = g.group;
+    tuneBody.appendChild(h);
+    const box = document.createElement('div'); box.className = 'gantt-editor';
+    let tmax = 1;
+    g.items.forEach(it => { tmax = Math.max(tmax, TS(it[0]) + TIMING[it[0]]); });
+    tmax = Math.ceil(tmax * 1.15 * 20) / 20;
+    g.items.forEach((it, i) => {
+      const rg = TIMING_RANGE[it[0]];
+      box.appendChild(buildGanttRow(it[0], it[1], rg[0], rg[1], rg[2],
+        TIMING_COLORS[(gi + i) % TIMING_COLORS.length], tmax));
+    });
+    tuneBody.appendChild(box);
+  });
+}
+
+function buildSliderTab(store, meta, range, setter, hintText, extra) {
+  tuneBody.innerHTML = '';
+  const hint = document.createElement('div');
+  hint.className = 'tune-hint'; hint.textContent = hintText;
+  tuneBody.appendChild(hint);
+  meta.forEach(g => {
+    const h = document.createElement('div');
+    h.className = 'tune-group'; h.textContent = g.group;
+    tuneBody.appendChild(h);
+    g.items.forEach(it => {
+      const rg = range[it[0]];
+      tuneBody.appendChild(buildNumberRow(store, it[0], it[1], rg[0], rg[1], rg[2], setter));
+    });
+  });
+  if (extra) tuneBody.appendChild(extra());
+}
+
+function buildLayoutTab() {
+  tuneBody.innerHTML = '';
+  layoutFieldRefs = {}; layoutRangeRefs = {};
+  const hint = document.createElement('div');
+  hint.className = 'tune-hint';
+  hint.textContent = '直接在畫面上點選物件拖曳；方向鍵微調 1px、Shift+方向鍵 10px。編輯中點畫布不會觸發 SPIN。';
+  tuneBody.appendChild(hint);
+
+  const list = document.createElement('div'); list.className = 'tune-obj-list';
+  LAYOUT_META.forEach(m => {
+    const b = document.createElement('button');
+    b.className = 'tune-obj-btn' + (m[0] === layoutSelected ? ' selected' : '');
+    b.textContent = m[1];
+    b.addEventListener('click', () => { layoutSelected = m[0]; buildLayoutTab(); });
+    list.appendChild(b);
+  });
+  tuneBody.appendChild(list);
+  if (!layoutSelected) return;
+
+  const meta = LAYOUT_META.find(m => m[0] === layoutSelected);
+  const o = LAYOUT[layoutSelected];
+  const h = document.createElement('div');
+  h.className = 'tune-group'; h.textContent = '選中：' + meta[1];
+  tuneBody.appendChild(h);
+  const RANGE = { x: [-300, 1500], y: [-300, 900], w: [0, 800], h: [0, 800] };
+  Object.keys(o).filter(p => typeof o[p] === 'number').forEach(p => {
+    if ((p === 'w' || p === 'h') && !meta[3]) return;
+    const row = document.createElement('div'); row.className = 'tune-row';
+    const lab = document.createElement('label'); lab.textContent = p.toUpperCase();
+    const rgv = RANGE[p] || [-500, 1500];
+    const rng = document.createElement('input');
+    rng.type = 'range'; rng.min = rgv[0]; rng.max = rgv[1]; rng.step = '1'; rng.value = o[p];
+    const num = document.createElement('input');
+    num.type = 'number'; num.step = '1'; num.value = o[p];
+    const applyVal = src => {
+      const v = parseInt(src.value, 10);
+      if (!isFinite(v)) return;
+      o[p] = v; syncLayoutDerived(); saveTuning();
+      if (src !== rng) rng.value = v;
+      if (src !== num) num.value = v;
+    };
+    rng.addEventListener('input', () => applyVal(rng));
+    num.addEventListener('input', () => applyVal(num));
+    num.addEventListener('change', () => applyVal(num));
+    layoutFieldRefs[p] = num; layoutRangeRefs[p] = rng;
+    row.append(lab, rng, num);
+    tuneBody.appendChild(row);
+  });
+}
+function syncLayoutFields() {
+  if (!layoutSelected) return;
+  const o = LAYOUT[layoutSelected];
+  Object.keys(layoutFieldRefs).forEach(p => {
+    if (typeof o[p] !== 'number') return;
+    layoutFieldRefs[p].value = o[p];
+    if (layoutRangeRefs[p]) layoutRangeRefs[p].value = o[p];
+  });
+}
+
+function refreshTuneBody() {
+  if (tuneTab === 'timing') buildTimingTab();
+  else if (tuneTab === 'layout') buildLayoutTab();
+  else if (tuneTab === 'fx') buildSliderTab(FX, FX_META, FX_RANGE, setFxValue,
+    '特效強度：門檻類（÷押注）決定該次演繹採用哪一級。', () => {
+      const h = document.createElement('div');
+      h.className = 'tune-group'; h.textContent = '消除演繹風格';
+      const w = document.createElement('div');
+      w.append(h, buildChoiceRows());
+      return w;
+    });
+  else buildSliderTab(ODDS, ODDS_META, ODDS_RANGE, setOddsValue,
+    '機率與賠率：改動後於下一局生效。調 RTP 先動「全域賠率乘數」。');
+}
+
+function setTunePanelOpen(open) {
+  tunePanelOpen = open;
+  tunePanel.classList.toggle('visible', open);
+  tuneBtn.classList.toggle('active', open);
+  if (open) refreshTuneBody();
+}
+tuneBtn.addEventListener('click', () => setTunePanelOpen(!tunePanelOpen));
+document.getElementById('tuneClose').addEventListener('click', () => setTunePanelOpen(false));
+tunePanel.querySelectorAll('.tune-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    tuneTab = tab.dataset.tab;
+    tunePanel.querySelectorAll('.tune-tab').forEach(t => t.classList.toggle('active', t === tab));
+    refreshTuneBody();
+  });
+});
+
+// 面板拖曳
+(function () {
+  const bar = document.getElementById('tuneDragBar');
+  bar.addEventListener('pointerdown', e => {
+    if (e.target.id === 'tuneClose') return;
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY;
+    const sl = tunePanel.offsetLeft, st = tunePanel.offsetTop;
+    tunePanel.style.left = sl + 'px';
+    tunePanel.style.top = st + 'px';
+    const onMove = ev => {
+      tunePanel.style.left = (sl + ev.clientX - sx) + 'px';
+      tunePanel.style.top = (st + ev.clientY - sy) + 'px';
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  });
+})();
+
+document.getElementById('tuneApplySpin').addEventListener('click', () => {
+  applyTuning();
+  const saved = saveTuning();
+  if (currentState === STATE.IDLE && !isAutoSpinning) {
+    startSpin();
+    setTuneStatus(saved ? '已套用 ✓ 後續 SPIN 皆用這組' : '已套用；瀏覽器未保存', saved ? 'ok' : 'wait');
+  } else {
+    setTuneStatus(saved ? '已套用 ✓ 這局跑完後生效' : '已套用；瀏覽器未保存', 'wait');
+  }
+});
+document.getElementById('tuneReset').addEventListener('click', () => {
+  TIMING = Object.assign({}, DEFAULT_TIMING);
+  TIMING_START = Object.assign({}, DEFAULT_TIMING_START);
+  LAYOUT = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
+  FX = Object.assign({}, DEFAULT_FX);
+  ODDS = Object.assign({}, DEFAULT_ODDS);
+  CHOICE = Object.assign({}, DEFAULT_CHOICE);
+  applyTuning(); syncLayoutDerived(); saveTuning(); refreshTuneBody();
+  setTuneStatus('已重設為預設值', 'ok');
+});
+function showExportFallback(text) {
+  const w = window.open('', '_blank', 'width=560,height=640');
+  if (!w) return;
+  w.document.write('<title>' + GAME_NAME + ' 調校設定</title>'
+    + '<textarea style="width:99%;height:96%;font-family:monospace;font-size:12px">'
+    + text.replace(/</g, '&lt;') + '</textarea>');
+}
+document.getElementById('tuneExport').addEventListener('click', () => {
+  const text = JSON.stringify({
+    game: GAME_NAME, build: APP_BUILD, version: TUNE_VERSION,
+    timing_seconds: TIMING, timeline_start_seconds: TIMING_START,
+    layout_px: LAYOUT, fx: FX, odds: ODDS, choice: CHOICE,
+  }, null, 2);
+  const done = ok => setTuneStatus(ok ? '設定已複製到剪貼簿 ✓' : '已開啟複製視窗', ok ? 'ok' : 'wait');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => done(true))
+      .catch(() => { showExportFallback(text); done(false); });
+  } else { showExportFallback(text); done(false); }
+});
+
+/* --- 佈局編輯：畫布覆蓋層與拖曳 --- */
+function drawLayoutOverlay() {
+  if (!layoutEditMode()) return;
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  LAYOUT_META.forEach(m => {
+    const o = LAYOUT[m[0]], b = m[2](o);
+    const sel = m[0] === layoutSelected;
+    ctx.setLineDash(sel ? [] : [6, 4]);
+    ctx.lineWidth = sel ? 2.5 : 1.5;
+    ctx.strokeStyle = sel ? '#facc15' : 'rgba(56,189,248,.75)';
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.setLineDash([]);
+    ctx.shadowColor = '#000'; ctx.shadowBlur = 4;
+    ctx.fillStyle = sel ? '#facc15' : 'rgba(56,189,248,.95)';
+    ctx.fillText(m[1] + (sel ? '  (' + o.x + ', ' + o.y + ')' : ''),
+      Math.max(2, Math.min(b.x + 2, W - 130)), b.y - 16 < 2 ? b.y + 2 : b.y - 16);
+    ctx.shadowBlur = 0;
+  });
+  ctx.restore();
+  ctx.textBaseline = 'alphabetic';
+}
+function canvasPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    mx: (e.clientX - rect.left) * (canvas.width / rect.width),
+    my: (e.clientY - rect.top) * (canvas.height / rect.height),
+  };
+}
+function layoutHitTest(mx, my) {
+  for (let i = LAYOUT_META.length - 1; i >= 0; i--) {
+    const m = LAYOUT_META[i], b = m[2](LAYOUT[m[0]]);
+    if (mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h) return m[0];
+  }
+  return null;
+}
+
+/* ============================================================
+ * 區塊 8：輸入
+ * ========================================================== */
+function hit(o, mx, my) { return mx >= o.x && mx <= o.x + o.w && my >= o.y && my <= o.y + o.h; }
+
+canvas.addEventListener('mousedown', e => {
+  if (!layoutEditMode()) return;
+  const p = canvasPos(e);
+  const h = layoutHitTest(p.mx, p.my);
+  layoutSelected = h;
+  layoutDrag = h ? { mx: p.mx, my: p.my, ox: LAYOUT[h].x, oy: LAYOUT[h].y } : null;
+  buildLayoutTab();
+});
+window.addEventListener('mousemove', e => {
+  if (!layoutEditMode()) {
+    // 公版面板 hover 狀態（SPIN 圓形、AUTO 方框）
+    if (e.target !== canvas) return;
+    const p = canvasPos(e);
+    const sb = LAYOUT.spinBtn, ab = LAYOUT.autoBtn;
+    const dx = p.mx - (sb.x + sb.w / 2), dy = p.my - (sb.y + sb.h / 2);
+    const sr = Math.min(sb.w, sb.h) / 2;
+    isMouseHoverSpin = dx * dx + dy * dy <= sr * sr;
+    isMouseHoverAuto = hit(ab, p.mx, p.my);
+    canvas.style.cursor =
+      ((isMouseHoverSpin && currentState === STATE.IDLE && !isAutoSpinning) || isMouseHoverAuto)
+        ? 'pointer' : 'default';
+    return;
+  }
+  if (layoutDrag && layoutSelected) {
+    const p = canvasPos(e);
+    LAYOUT[layoutSelected].x = Math.round(layoutDrag.ox + p.mx - layoutDrag.mx);
+    LAYOUT[layoutSelected].y = Math.round(layoutDrag.oy + p.my - layoutDrag.my);
+    syncLayoutDerived(); syncLayoutFields();
+  } else if (e.target === canvas) {
+    const p = canvasPos(e);
+    canvas.style.cursor = layoutHitTest(p.mx, p.my) ? 'move' : 'default';
+  }
+});
+window.addEventListener('mouseup', () => { if (layoutDrag) { layoutDrag = null; saveTuning(); } });
+
+canvas.addEventListener('click', e => {
+  if (layoutEditMode()) return;          // 編輯佈局中不觸發遊戲操作
+  const p = canvasPos(e), mx = p.mx, my = p.my;
+
+  // 統計面板顯示開關
+  for (const t of statToggleRects) {
+    if (hit(t, mx, my)) {
+      if (t.key === 'paylines') showPaylines = !showPaylines;
+      else if (t.key === 'popup') showScorePopup = !showScorePopup;
+      else if (t.key === 'frame') showGridFrame = !showGridFrame;
+      return;
+    }
+  }
+  // --- 下方公版面板的判定（與 drawUI 共用同一組座標）---
+  const ux = LAYOUT.bottomUI.x, uy = LAYOUT.bottomUI.y, barY = uy - 46;
+  const F = UI_SLOT.forceBtn;
+  if (hit({ x: F.x + ux, y: uy + F.uy, w: F.w, h: F.h }, mx, my)) {
+    showForceMenu = !showForceMenu; return;
+  }
+  if (showForceMenu) {
+    const m = forceMenuRect();
+    for (let i = 0; i < m.rects.length; i++) {
+      if (hit(m.rects[i], mx, my)) {
+        forceSpinType = m.rects[i].op.value; showForceMenu = false; return;
+      }
+    }
+    showForceMenu = false;
+  }
+  const I = UI_SLOT.infoBtn;
+  if (hit({ x: I.x + ux, y: barY + I.dy, w: I.w, h: I.h }, mx, my)) {
+    setInfoOpen(!infoPanel.classList.contains('visible')); return;
+  }
+  if (hit(LAYOUT.autoBtn, mx, my)) {
+    isAutoSpinning = !isAutoSpinning;
+    autoSpinCount = 0;                                  // 0 = 無限
+    if (isAutoSpinning && currentState === STATE.IDLE) startSpin();
+    return;
+  }
+  // SPIN 為圓形判定（大圓鈕），不能用方框
+  const sb = LAYOUT.spinBtn;
+  const sdx = mx - (sb.x + sb.w / 2), sdy = my - (sb.y + sb.h / 2);
+  const sr = Math.min(sb.w, sb.h) / 2;
+  if (sdx * sdx + sdy * sdy <= sr * sr) {
+    if (currentState === STATE.IDLE) startSpin(); else skipCurrent();
+    return;
+  }
+  // 點在公版面板上的其他位置：不當成遊戲操作
+  if (my >= barY) return;
+  // 演出中點畫布 → 跳過。待機時「只有 SPIN 鈕」能開轉：
+  // SPIN 大圓鈕突出於面板上緣，若允許點畫布開轉，圓鈕外接方框的角落會誤觸。
+  if (currentState !== STATE.IDLE) skipCurrent();
+});
+
+window.addEventListener('keydown', e => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  if (e.key === 'p' || e.key === 'P') { e.preventDefault(); isPaused = !isPaused; return; }
+  if (e.key === 'Escape') {
+    if (tunePanelOpen) { e.preventDefault(); setTunePanelOpen(false); return; }
+    if (infoPanel.classList.contains('visible')) { e.preventDefault(); setInfoOpen(false); return; }
+  }
+  if (e.key === ' ') { e.preventDefault(); if (currentState === STATE.IDLE) startSpin(); else skipCurrent(); return; }
+  if (!layoutEditMode() || !layoutSelected) return;
+  const step = e.shiftKey ? 10 : 1;
+  let dx = 0, dy = 0;
+  if (e.key === 'ArrowLeft') dx = -step;
+  else if (e.key === 'ArrowRight') dx = step;
+  else if (e.key === 'ArrowUp') dy = -step;
+  else if (e.key === 'ArrowDown') dy = step;
+  else return;
+  e.preventDefault();
+  LAYOUT[layoutSelected].x += dx;
+  LAYOUT[layoutSelected].y += dy;
+  syncLayoutDerived(); syncLayoutFields(); saveTuning();
+});
+
+// 多分頁同步：另一個分頁改了設定，這裡跟著更新
+window.addEventListener('storage', e => {
+  if (e.key !== TUNE_KEY) return;
+  loadTuning();
+  if (tunePanelOpen) refreshTuneBody();
+});
+
+/* ============================================================
+ * 區塊 9：主迴圈與入口
+ * ========================================================== */
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+(async function main() {
+  loadTuning();          // 先載入保存值（內含 applyTuning + syncLayoutDerived）
+  generateBoard();
+  refreshTuneBody();
+  await loadArt();       // 素材缺件不阻斷，退回程式繪製
+  requestAnimationFrame(gameLoop);
+})();
+</script>
+</body>
+</html>

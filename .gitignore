@@ -5,3 +5,6 @@
 *.bak-*
 _verify_*.html
 _shot*.png
+_shot_*.html
+_shot_*.png
+_shot_probe.html
