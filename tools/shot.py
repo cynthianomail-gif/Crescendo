@@ -162,6 +162,86 @@ function SCENE() {
   setTunePanelOpen(true);
 }
 """),
+    ("09_slam_approach", """
+function SCENE() {
+  SETB([ID(4,2), ID(4,1), ID(4,3), ID(12,0), WILD_ID]);
+  for (var c = 0; c < 5; c++) { colStopped[c] = true; board[c][0].locked = true; }
+  features = [
+    { type: FEAT_IDX.addScore, tier: 4,  value: 10, triggered: true, flash: 0 },
+    { type: FEAT_IDX.mulScore, tier: 4,  value: 2,  triggered: true, flash: 0 },
+    { type: FEAT_IDX.addMul,   tier: 12, value: 5,  triggered: true, flash: 0 },
+    { type: FEAT_IDX.mulMul,   tier: 4,  value: 3,  triggered: true, flash: 0 },
+  ];
+  featOrder = [0, 1, 2, 3]; featCursor = 3;
+  handResult = classifyHand(boardIds());
+  winCells = new Set(handResult.cells);
+  handLabelText = handResult.name; handLabelKind = 'hand';
+  startMult = 4; payUnits = (handResult.pay + 10) * 2; curMult = (4 + 5) * 3;
+  roundWin = Math.round(scoreNow() * curMult);
+  winTier = tierOf(roundWin);
+  spinWin = roundWin; displayScore = 0; scoreFrom = 0;
+  freeCount = 2;
+
+  // 【得分相乘演繹】靠攏中：兩欄往中間衝，中間的「×」還看得到
+  currentState = STATE.MULT_SLAM; stateTimer = 12;
+  slamK = 0.45; slamHit = false;
+}
+"""),
+    ("10_slam_hit", """
+function SCENE() {
+  SETB([ID(4,2), ID(4,1), ID(4,3), ID(12,0), WILD_ID]);
+  for (var c = 0; c < 5; c++) { colStopped[c] = true; board[c][0].locked = true; }
+  features = [
+    { type: FEAT_IDX.addScore, tier: 4,  value: 10, triggered: true, flash: 0 },
+    { type: FEAT_IDX.mulScore, tier: 4,  value: 2,  triggered: true, flash: 0 },
+    { type: FEAT_IDX.addMul,   tier: 12, value: 5,  triggered: true, flash: 0 },
+    { type: FEAT_IDX.mulMul,   tier: 4,  value: 3,  triggered: true, flash: 0 },
+  ];
+  featOrder = [0, 1, 2, 3]; featCursor = 3;
+  handResult = classifyHand(boardIds());
+  winCells = new Set(handResult.cells);
+  handLabelText = handResult.name; handLabelKind = 'hand';
+  startMult = 4; payUnits = (handResult.pay + 10) * 2; curMult = (4 + 5) * 3;
+  roundWin = Math.round(scoreNow() * curMult);
+  winTier = tierOf(roundWin);
+  spinWin = roundWin; displayScore = 0; scoreFrom = 0;
+  freeCount = 2;
+
+  // 相撞瞬間：蓋過「×」符號、輪廓光往外擴、盤面中央彈出最終得分
+  currentState = STATE.MULT_SLAM; stateTimer = 22;
+  slamK = 0.97; slamHit = true;
+  shakeAmp = 0;                       // 截圖要穩，震動不入鏡（實機有）
+  slamRings = [{ t: 7, life: 25 }];
+  slamResult = { t: 8, score: roundWin, base: Math.round(scoreNow()), mult: curMult };
+}
+"""),
+    ("11_slam_scorerun", """
+function SCENE() {
+  SETB([ID(4,2), ID(4,1), ID(4,3), ID(12,0), WILD_ID]);
+  for (var c = 0; c < 5; c++) { colStopped[c] = true; board[c][0].locked = true; }
+  features = [
+    { type: FEAT_IDX.addScore, tier: 4,  value: 10, triggered: true, flash: 0 },
+    { type: FEAT_IDX.mulScore, tier: 4,  value: 2,  triggered: true, flash: 0 },
+    { type: FEAT_IDX.addMul,   tier: 12, value: 5,  triggered: true, flash: 0 },
+    { type: FEAT_IDX.mulMul,   tier: 4,  value: 3,  triggered: true, flash: 0 },
+  ];
+  featOrder = [0, 1, 2, 3]; featCursor = 3;
+  handResult = classifyHand(boardIds());
+  winCells = new Set(handResult.cells);
+  handLabelText = handResult.name; handLabelKind = 'hand';
+  startMult = 4; payUnits = (handResult.pay + 10) * 2; curMult = (4 + 5) * 3;
+  roundWin = Math.round(scoreNow() * curMult);
+  winTier = tierOf(roundWin);
+  spinWin = roundWin; displayScore = 0; scoreFrom = 0;
+  freeCount = 2;
+
+  // 跑分中：兩欄保持貼合，中央結果牌回到 1.0 倍
+  currentState = STATE.SCORE_RUN; stateTimer = 30;
+  displayScore = spinWin * 0.6;
+  slamK = 1; slamHit = true;
+  slamResult = { t: 40, score: roundWin, base: Math.round(scoreNow()), mult: curMult };
+}
+"""),
 ]
 
 src = io.open(SRC, encoding="utf-8").read()

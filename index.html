@@ -243,7 +243,7 @@ canvas { display: block; width: 100%; height: 100%; }
  * 面板本身（區塊 7）原則上不用動。
  * ========================================================== */
 
-const APP_BUILD = 'crescendo-3';   // 驗證用識別值：測到的是不是最新版，看這個
+const APP_BUILD = 'crescendo-4';   // 驗證用識別值：測到的是不是最新版，看這個
 const GAME_NAME = 'Crescendo';
 
 const canvas = document.getElementById('gameCanvas');
@@ -366,6 +366,8 @@ const DEFAULT_TIMING = {
   cardLift:       0.34,   // 得分牌抬起（出牌感）動畫時長 [自設]
   cardLiftStagger:0.06,   // 得分牌逐張抬起的錯開間隔 [自設]
   featTrigger:    0.45,   // 功能卡逐張觸發演繹 [自設：§美術需求說明無秒數]
+  multSlam:       0.60,   // 得分相乘演繹：兩欄位往中間碰撞 [§美術需求說明 H47]（秒數 [自設]，該分頁無秒數）
+  slamRestore:    0.35,   // 復原演繹：兩欄位往左右回原位 [§美術需求說明 H48]（秒數 [自設]）
   preHold1:       0.30,   // 1階 得分相乘演繹前停留 [§高倍得分層級 E6]
   preHold2:       0.80,   // 2階 [§層級 E9]
   preHold3:       1.50,   // 3階 [§層級 E11]
@@ -395,6 +397,8 @@ const TIMING_META = [
     ['featTrigger', '功能卡逐張觸發'],
     ['scoreAppear', '中獎後出現分數'], ['scoreHold', '分數停留'],
     ['symbolFx', '圖示演繹'], ['multBoost', '起始倍數加倍'] ] },
+  { group: '得分相乘演繹 [§美術 F47/F48]', items: [
+    ['multSlam', '兩欄位碰撞時長'], ['slamRestore', '復原回位時長'] ] },
   { group: '得分層級停留（1/2/3 階）', items: [
     ['preHold1', '1階 演繹前停留'], ['preHold2', '2階 演繹前停留'], ['preHold3', '3階 演繹前停留'],
     ['postHold1', '1階 跑分前停留'], ['postHold2', '2階 跑分前停留'], ['postHold3', '3階 跑分前停留'] ] },
@@ -410,8 +414,10 @@ const DEFAULT_TIMING_START = {
   reelStart: 0, reelStopInterval: 1.00, reelSpeed: 0, landBounce: 1.80,
   winHold: 0, cardLock: 0.40, cardLift: 0.40, cardLiftStagger: 0.40, featTrigger: 0.70,
   preHold1: 1.15, preHold2: 1.15, preHold3: 1.15,
-  postHold1: 2.15, postHold2: 2.15, postHold3: 2.15,
-  scoreAppear: 1.45, scoreHold: 2.45, symbolFx: 0.40, multBoost: 1.15,
+  multSlam: 1.45,
+  postHold1: 2.05, postHold2: 2.05, postHold3: 2.05,
+  scoreAppear: 2.35, scoreHold: 3.35, slamRestore: 4.05,
+  symbolFx: 0.40, multBoost: 4.40,
   respinPause: 0, idleGap: 0, drawHint: 0.40, freeCollect: 0.40,
   bigWinHold: 0, fgEnterHold: 0, fgSpinGap: 1.80, autoSpinDelay: 0,
 };
@@ -487,6 +493,15 @@ const DEFAULT_FX = {
   cardLiftY: 30, cardLiftScale: 1.10, cardLiftTilt: 7, cardLiftArc: 0.25, cardLiftBack: 1.7,
   // 命中功能卡的牌：牌上方的箭頭指示 ＋ 牌身紫框
   arrowSize: 15, arrowGlow: 24, arrowBob: 4, arrowBobMs: 520, hitFrameGlow: 26,
+  // 得分相乘演繹 [§美術需求說明 H47]：兩欄位往中間碰撞、蓋過銜接的成倍符號、相撞時輪廓光往外擴
+  slamSymbolSize: 34,   // 銜接用「×」成倍符號大小（碰撞時被蓋過）[§美術 E44 圖三]
+  slamGap:        4,    // 碰撞後兩框之間留的縫隙(px)
+  slamOvershoot:  0.10, // 碰撞回彈：互推開的比例（0=不回彈）
+  slamRing:       190,  // 輪廓光往外擴的半徑(px)
+  slamRingWidth:  8,    // 輪廓光線寬
+  slamResultPop:  1.40, // 盤面中央最終得分彈出的放大峰值
+  slamResultSize: 62,   // 盤面中央最終得分字級
+  slamResultPlate: 0.9, // 中央結果的底板不透明度（0 = 不要底板，數字直接疊在牌上）
   featGlow: 22, featBreath: 900,             // 功能卡待機呼吸 [§美術：恆亮+微弱呼吸]
   meterBreath: 320,                          // 燈條快速呼吸（2 個 FREE 時）[§美術 F41]
   wildBeamSpeed: 420,                        // 轉換 WILD 光子傳遞（向下）[§美術 H29]
@@ -504,6 +519,13 @@ const FX_META = [
     ['cardLiftY', '抬起高度(px)', 0, 160, 1], ['cardLiftScale', '抬起放大(倍)', 1, 1.6, 0.01],
     ['cardLiftTilt', '扇形傾斜(度)', 0, 30, 0.5], ['cardLiftArc', '中間最高(弧度)', 0, 0.8, 0.05],
     ['cardLiftBack', '回彈超衝(0=無)', 0, 5, 0.1] ] },
+  { group: '得分相乘演繹（碰撞）[§美術 H47]', items: [
+    ['slamSymbolSize', '× 符號大小(px)', 10, 80, 1], ['slamGap', '碰撞後縫隙(px)', 0, 60, 1],
+    ['slamOvershoot', '碰撞回彈(0=無)', 0, 0.6, 0.02],
+    ['slamRing', '輪廓光外擴(px)', 0, 400, 5], ['slamRingWidth', '輪廓光線寬', 0, 24, 0.5],
+    ['slamResultPop', '中央結果彈出(倍)', 1, 2.5, 0.05],
+    ['slamResultSize', '中央結果字級(px)', 20, 140, 2],
+    ['slamResultPlate', '中央結果底板(0~1)', 0, 1, 0.05] ] },
   { group: '功能卡命中箭頭', items: [
     ['arrowSize', '箭頭大小(px)', 4, 40, 1], ['arrowGlow', '箭頭發光', 0, 80, 1],
     ['arrowBob', '箭頭浮動(px)', 0, 20, 0.5], ['arrowBobMs', '浮動週期(ms)', 100, 2000, 20],
@@ -644,6 +666,8 @@ let F_CARDLIFT = 20, F_LIFTSTAG = 4;
 let F_WINHOLD = 24, F_CARDLOCK = 18, F_FEAT = 27, F_SCOREAPPEAR = 60, F_SCOREHOLD = 42;
 let F_SYMFX = 60, F_MULTBOOST = 48, F_RESPIN = 24, F_IDLE = 24, F_DRAWHINT = 60;
 let F_FREECOL = 36, F_BIGWIN = 108, F_FGENTER = 96, F_FGGAP = 24, F_AUTO = 27;
+let F_MULTSLAM = 36, F_SLAMRESTORE = 21;
+const SLAM_HIT_AT = 0.55;   // 相乘演繹進行到幾成時「相撞」（前段靠攏、後段回彈）
 let F_PRE = [], F_POST = [];
 let POP_TIERS = [], WIN_FRAME_TIERS = [], SHAKE_TIERS = [], ZOOM_TIERS = [];
 const BOUNCE_AMPLITUDE = 14;
@@ -667,6 +691,8 @@ function applyTuning() {
   F_SCOREHOLD   = TF(TIMING.scoreHold);
   F_SYMFX       = TF(TIMING.symbolFx);
   F_MULTBOOST   = TF(TIMING.multBoost);
+  F_MULTSLAM    = TF(TIMING.multSlam);
+  F_SLAMRESTORE = TF(TIMING.slamRestore);
   F_RESPIN      = TF(TIMING.respinPause);
   F_IDLE        = TF(TIMING.idleGap);
   F_DRAWHINT    = TF(TIMING.drawHint);
@@ -762,6 +788,9 @@ const STATE = {
   SHOWING_WIN: 5, FEAT_APPLY: 6, PRE_HOLD: 7, SCORE_RUN: 8, POST_HOLD: 9,
   MULT_BOOST: 10, RESPIN_PREP: 11, DRAW_HINT: 12, BIGWIN: 13,
   FG_ENTER: 14, FG_END: 15,
+  // 得分相乘演繹 [§美術需求說明 F47]：所有卡牌作用完畢、計算得分時，
+  // 得分欄與倍數欄互相往中間碰撞相乘；SCORE_HOLD 尾段做【復原演繹】[H48] 把兩欄推回原位。
+  MULT_SLAM: 16, SCORE_HOLD: 17,
 };
 let currentState = STATE.IDLE;
 
@@ -800,6 +829,14 @@ let stats = { spins: 0, hits: 0 };
 let hasHitThisSpin = false;
 let particles = [], floatTexts = [];
 let shakeAmp = 0, zoomAmp = 1;
+
+/* 得分相乘演繹的執行期狀態 [§美術需求說明 H47/H48]
+ *   slamK      0 = 兩欄各在原位；1 = 完全靠攏（碰撞完成，蓋過中間的「×」符號）
+ *   slamRings  相撞瞬間往外擴的輪廓光
+ *   slamResult 盤面中央的最終得分牌（得分 × 倍數 = 最終得分） */
+let slamK = 0, slamHit = false;
+let slamRings = [];
+let slamResult = null;
 // 展示用顯示開關（統計面板內可切換）
 let showPaylines = true, showScorePopup = true, showGridFrame = true;
 let statToggleRects = [];
@@ -1038,7 +1075,8 @@ function featIsHit(i) {
 function showFeatArrows() {
   return currentState === STATE.SHOWING_WIN || currentState === STATE.FEAT_APPLY
       || currentState === STATE.PRE_HOLD    || currentState === STATE.SCORE_RUN
-      || currentState === STATE.POST_HOLD   || currentState === STATE.MULT_BOOST;
+      || currentState === STATE.POST_HOLD   || currentState === STATE.MULT_BOOST
+      || currentState === STATE.MULT_SLAM   || currentState === STATE.SCORE_HOLD;
 }
 // 這張牌命中的卡裡，有沒有正在被套用的那一張（箭頭要加強）
 function cardFeatActive(c) {
@@ -1343,18 +1381,31 @@ function finishFeatures() {
   spinWin += roundWin;
   totalScore += roundWin;
   scoreFrom = displayScore;
-  shakeAmp = SHAKE_TIERS[winTier] || 0;
+  // 鏡頭拉近在「得分相乘_演繹前停留」時發生 [§高倍得分層級設計 J4]；
+  // 震動則等到兩欄真的相撞那一瞬間才給 [§美術需求說明 H47]，所以不在這裡設 shakeAmp。
   zoomAmp = ZOOM_TIERS[winTier] || 1;
-  if (showScorePopup) {
-    floatTexts.push({
-      x: GRID_X + GRID_W / 2, y: GRID_Y + GRID_H / 2, t: 0,
-      life: F_SCOREHOLD + 30, text: '+' + fmtScore(roundWin),
-      big: winTier >= 2,
-    });
-  }
+  slamK = 0; slamHit = false; slamRings = []; slamResult = null;
   spawnPopParticles();
   currentState = STATE.PRE_HOLD;
   stateTimer = 0;
+}
+
+/* 得分相乘演繹的碰撞瞬間 [§美術需求說明 H47]
+ *   └兩個欄位互相往中間碰撞，蓋過銜接用的成倍符號；相撞時會有輪廓光往外擴。
+ *   └碰撞時畫面稍微震動，震動大小請參考「高倍得分層級設計」。
+ * 相乘結果彈到盤面中央（企劃只寫到「碰撞」，結果顯示在盤面中央是使用者 2026-08-27 追加的指定）。 */
+function onSlamHit() {
+  slamHit = true;
+  shakeAmp = SHAKE_TIERS[winTier] || 0;
+  slamRings.push({ t: 0, life: Math.max(6, Math.round(F_MULTSLAM * 0.7)) });
+  if (showScorePopup) {
+    slamResult = { t: 0, score: roundWin, base: Math.round(scoreNow()), mult: curMult };
+  }
+}
+// 相乘結果牌要活到「復原演繹」為止；跨 MULT_SLAM→POST_HOLD→SCORE_RUN→SCORE_HOLD 都在
+function slamResultAlive() {
+  return currentState === STATE.MULT_SLAM || currentState === STATE.POST_HOLD
+      || currentState === STATE.SCORE_RUN || currentState === STATE.SCORE_HOLD;
 }
 function afterScore() {
   // 5 張全中 → 起始倍數加倍 [§一般遊戲 E47]
@@ -1437,6 +1488,7 @@ function startSpin() {
   handResult = null; winCells = null; drawInfo = null;
   drawRespinUsed = 0; freeRespins = 0;
   particles = []; floatTexts = []; wildBeams = [];
+  slamK = 0; slamHit = false; slamRings = []; slamResult = null;   // 復原演繹 [§美術 H48]
   handLabelText = ''; handLabelKind = '';
 
   if (!inFG) {
@@ -1498,8 +1550,10 @@ function skipCurrent() {
   jump[STATE.SHOWING_WIN]  = F_WINHOLD + F_CARDLOCK;
   jump[STATE.FEAT_APPLY]   = F_FEAT;
   jump[STATE.PRE_HOLD]     = F_PRE[winTier] || 0;
+  jump[STATE.MULT_SLAM]    = F_MULTSLAM;
   jump[STATE.SCORE_RUN]    = F_SCOREAPPEAR;
   jump[STATE.POST_HOLD]    = F_POST[winTier] || 0;
+  jump[STATE.SCORE_HOLD]   = F_SCOREHOLD + F_SLAMRESTORE;
   jump[STATE.MULT_BOOST]   = F_MULTBOOST;
   jump[STATE.DRAW_HINT]    = F_DRAWHINT;
   jump[STATE.BIGWIN]       = F_BIGWIN;
@@ -1528,6 +1582,8 @@ function update() {
   if (zoomAmp > 1.001) zoomAmp = 1 + (zoomAmp - 1) * 0.94; else zoomAmp = 1;
   features.forEach(f => { if (f.flash > 0) f.flash = Math.max(0, f.flash - 0.04); });
   wildBeams.forEach(b => { b.t++; });
+  slamRings = slamRings.filter(r => { r.t++; return r.t < r.life; });
+  if (slamResult) slamResult.t++;
   updateLift();
 
   particles = particles.filter(p => {
@@ -1575,28 +1631,74 @@ function update() {
       }
       break;
 
+    // 得分相乘_演繹前停留 [§高倍得分層級設計 E5]；鏡頭在這段拉近 [J4]
     case STATE.PRE_HOLD:
       stateTimer++;
       if (stateTimer >= (F_PRE[winTier] || 0)) {
+        currentState = STATE.MULT_SLAM; stateTimer = 0;
+        slamK = 0; slamHit = false;
+      }
+      break;
+
+    // 【得分相乘演繹】[§美術需求說明 F47/H47]：兩欄位往中間碰撞 → 相撞 → 微幅回彈
+    case STATE.MULT_SLAM:
+      stateTimer++;
+      {
+        const k = Math.min(1, stateTimer / Math.max(1, F_MULTSLAM));
+        if (k < SLAM_HIT_AT) {
+          // 靠攏：加速往中間衝（越接近越快，才有「打擊」的力道）
+          slamK = Math.pow(k / SLAM_HIT_AT, 2.2);
+        } else {
+          if (!slamHit) onSlamHit();
+          // 相撞後互相推開一點再貼合
+          const u = (k - SLAM_HIT_AT) / Math.max(1e-6, 1 - SLAM_HIT_AT);
+          slamK = 1 - Math.max(0, FX.slamOvershoot) * Math.sin(Math.PI * u) * (1 - u);
+        }
+      }
+      if (stateTimer >= F_MULTSLAM) {
+        if (!slamHit) onSlamHit();       // 時長被調成 0 也要保證碰撞事件發生過
+        slamK = 1;
+        currentState = STATE.POST_HOLD; stateTimer = 0;
+      }
+      break;
+
+    // 得分相乘演繹後、跑分前停留 [§高倍得分層級設計 F5]
+    case STATE.POST_HOLD:
+      stateTimer++;
+      slamK = 1;
+      if (stateTimer >= (F_POST[winTier] || 0)) {
         currentState = STATE.SCORE_RUN; stateTimer = 0;
       }
       break;
 
     case STATE.SCORE_RUN:
       stateTimer++;
+      slamK = 1;
       {
         const k = Math.min(1, stateTimer / Math.max(1, F_SCOREAPPEAR));
         displayScore = scoreFrom + (spinWin - scoreFrom) * k;
       }
       if (stateTimer >= F_SCOREAPPEAR) {
         displayScore = spinWin;
-        currentState = STATE.POST_HOLD; stateTimer = 0;
+        currentState = STATE.SCORE_HOLD; stateTimer = 0;
       }
       break;
 
-    case STATE.POST_HOLD:
+    // 分數停留 [§節奏表 D9]，尾段接【復原演繹】：兩個相靠近的欄位往左右回到原先的位置 [§美術 H48]
+    case STATE.SCORE_HOLD:
       stateTimer++;
-      if (stateTimer >= (F_POST[winTier] || 0) + F_SCOREHOLD) afterScore();
+      {
+        const rest = stateTimer - F_SCOREHOLD;
+        if (rest <= 0) slamK = 1;
+        else {
+          const u = Math.min(1, rest / Math.max(1, F_SLAMRESTORE));
+          slamK = 1 - (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2);   // easeInOutQuad
+        }
+      }
+      if (stateTimer >= F_SCOREHOLD + F_SLAMRESTORE) {
+        slamK = 0; slamResult = null; slamRings = [];
+        afterScore();
+      }
       break;
 
     case STATE.MULT_BOOST:
@@ -1954,34 +2056,144 @@ function drawFeatureRow() {
   }
 }
 
+// 相撞時的輪廓光往外擴 [§美術需求說明 H47]
+function drawSlamRings(cx, cy) {
+  if (!slamRings.length || FX.slamRing <= 0) return;
+  slamRings.forEach(r => {
+    const k = r.t / r.life;
+    const rad = 10 + FX.slamRing * (1 - Math.pow(1 - k, 2));   // 一開始擴得快，尾段收慢
+    ctx.save();
+    // 加亮混合：光是往外「擴」不是往外「蓋」，用 lighter 才不會把底下的數字遮掉
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = Math.max(0, 1 - k * k) * 0.6;
+    ctx.strokeStyle = '#fde68a';
+    ctx.lineWidth = Math.max(0.5, FX.slamRingWidth * (1 - k));
+    ctx.shadowColor = '#f59e0b'; ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rad, rad * 0.62, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // 內側再補一圈細的，讓「輪廓光」有厚度
+    ctx.globalAlpha *= 0.5;
+    ctx.lineWidth = Math.max(0.5, FX.slamRingWidth * (1 - k) * 0.45);
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rad * 0.5, rad * 0.5 * 0.62, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
+/* 相乘結果落在盤面中央（使用者 2026-08-27 指定；企劃 H47 只寫到「碰撞」為止）
+ * 上排小字＝得分 × 倍數，下排大字＝最終得分。 */
+function drawSlamResult() {
+  if (!slamResult || !slamResultAlive()) return;
+  const cx = GRID_X + GRID_W / 2, cy = GRID_Y + GRID_H / 2;
+  const t = slamResult.t;
+  const pop = 8;                                     // 彈出用的幀數
+  const k = Math.min(1, t / pop);
+  const peak = Math.max(1, FX.slamResultPop);
+  const scale = k < 1 ? (0.3 + (peak - 0.3) * k) : peak - (peak - 1) * Math.min(1, (t - pop) / 10);
+  const big = fmtScore(slamResult.score);
+  const small = fmtScore(slamResult.base) + '  ×' + slamResult.mult;
+  const smallSize = Math.max(11, Math.round(FX.slamResultSize * 0.32));
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  // 底板：盤面中央疊在撲克牌上，沒有底板會被牌面洗掉看不清
+  if (FX.slamResultPlate > 0) {
+    ctx.font = 'bold ' + FX.slamResultSize + 'px Arial';
+    const bw = ctx.measureText(big).width;
+    ctx.font = 'bold ' + smallSize + 'px Arial';
+    const sw = ctx.measureText(small).width;
+    const pw = Math.max(bw, sw) + FX.slamResultSize * 0.9;
+    const ph = FX.slamResultSize * 1.75;
+    ctx.save();
+    ctx.globalAlpha = FX.slamResultPlate;
+    roundRect(-pw / 2, -ph / 2 - FX.slamResultSize * 0.14, pw, ph, ph / 2,
+      'rgba(2,6,23,.92)', 'rgba(250,204,21,.55)', 2);
+    ctx.restore();
+  }
+
+  ctx.font = 'bold ' + smallSize + 'px Arial';
+  ctx.fillStyle = '#cbd5e1';
+  ctx.shadowColor = '#000'; ctx.shadowBlur = 6;
+  ctx.fillText(small, 0, -FX.slamResultSize * 0.56);
+  ctx.font = 'bold ' + FX.slamResultSize + 'px Arial';
+  ctx.fillStyle = isHighScore(slamResult.score) ? '#fb7185' : '#facc15';
+  ctx.shadowColor = '#facc15'; ctx.shadowBlur = 26;
+  ctx.fillText(big, 0, FX.slamResultSize * 0.14);
+  ctx.restore();
+}
+
+/* 得分相乘演繹的位移 [§美術需求說明 H47]：兩欄各自往中間移動，
+ * 靠攏完成時左框右緣與右框左緣之間只留 slamGap。回傳 { dx, cx, gapCx }。
+ * 位置全部由 LAYOUT 推出來，拖過佈局分頁也不會跑掉。 */
+function slamShift() {
+  const sb = LAYOUT.scoreBox, mb = LAYOUT.multBox;
+  const gapCx = ((sb.x + sb.w) + mb.x) / 2;                 // 兩框之間的中線＝「×」符號的位置
+  const gap = Math.max(0, FX.slamGap);
+  const dxS = (gapCx - gap / 2) - (sb.x + sb.w);            // 得分框要往右移多少
+  const dxM = (gapCx + gap / 2) - mb.x;                     // 倍數框要往左移多少（負值）
+  const k = Math.max(0, Math.min(1.2, slamK));
+  return { sdx: dxS * k, mdx: dxM * k, gapCx: gapCx, k: k };
+}
+
 // 左上黃框＝得分；右上藍框＝起始倍數 [§一般遊戲 D30/D31]
 function drawScoreBoxes() {
   const sb = LAYOUT.scoreBox, mb = LAYOUT.multBox;
-  const showScore = (currentState === STATE.IDLE && spinWin === 0) ? 0 : displayScore;
-  const hi = isHighScore(showScore);
+  const sh = slamShift();
+  const sx = sb.x + sh.sdx, mx = mb.x + sh.mdx;
 
-  roundRect(sb.x, sb.y, sb.w, sb.h, 12, 'rgba(66,45,4,.88)', '#facc15', 2.5);
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#fde68a'; ctx.font = 'bold 13px sans-serif';
-  ctx.fillText('得分 SCORE', sb.x + 14, sb.y + 15);
-  ctx.textAlign = 'right';
-  ctx.fillStyle = hi ? '#fb7185' : '#fff';           // 高倍變色 [§一般遊戲 F125]
-  ctx.font = 'bold 28px Arial';
-  ctx.fillText(fmtScore(showScore), sb.x + sb.w - 14, sb.y + sb.h - 19);
-
-  roundRect(mb.x, mb.y, mb.w, mb.h, 12, 'rgba(8,43,74,.88)', '#38bdf8', 2.5);
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#bae6fd'; ctx.font = 'bold 13px sans-serif';
-  ctx.fillText('起始倍數 MULTIPLIER', mb.x + 14, mb.y + 15);
-  ctx.textAlign = 'right';
   // 只有「套用功能卡→結算」這幾個階段才顯示加成後的 curMult；
   // 其餘（待機／轉動／預報／重轉）顯示本局目前的起始倍數。
   const inSettle = currentState === STATE.FEAT_APPLY || currentState === STATE.PRE_HOLD
-    || currentState === STATE.SCORE_RUN || currentState === STATE.POST_HOLD;
+    || currentState === STATE.MULT_SLAM || currentState === STATE.SCORE_RUN
+    || currentState === STATE.POST_HOLD || currentState === STATE.SCORE_HOLD;
+  // 相乘演繹期間，得分欄顯示的是「本回合得分」（要跟倍數欄相乘的那個數），
+  // 相撞之後換成相乘結果；其餘時候照舊顯示本局累計 [§美術 H48：復原時得分歸零]
+  let showScore;
+  if (currentState === STATE.IDLE && spinWin === 0) showScore = 0;
+  else if (inSettle && currentState !== STATE.SCORE_RUN && currentState !== STATE.SCORE_HOLD) {
+    showScore = slamHit ? roundWin : Math.round(scoreNow());
+  } else showScore = displayScore;
+  const hi = isHighScore(showScore);
+
+  // 銜接用的成倍符號 [§美術 E44 圖三]：碰撞時被兩個欄位蓋過 [H47]
+  if (FX.slamSymbolSize > 0) {
+    // 不主動淡出：它是被兩個欄位「實體蓋過」的 [§美術 H47]，
+    // 只在最後貼合的一小段補一點淡出，避免縫隙裡露出半個符號。
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, (0.96 - sh.k) / 0.14));
+    ctx.fillStyle = '#e2e8f0';
+    ctx.shadowColor = '#facc15'; ctx.shadowBlur = 10;
+    ctx.font = 'bold ' + FX.slamSymbolSize + 'px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('×', sh.gapCx, sb.y + sb.h / 2);
+    ctx.restore();
+  }
+
+  roundRect(sx, sb.y, sb.w, sb.h, 12, 'rgba(66,45,4,.88)', '#facc15', 2.5);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fde68a'; ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('得分 SCORE', sx + 14, sb.y + 15);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = hi ? '#fb7185' : '#fff';           // 高倍變色 [§一般遊戲 F125]
+  ctx.font = 'bold 28px Arial';
+  ctx.fillText(fmtScore(showScore), sx + sb.w - 14, sb.y + sb.h - 19);
+
+  roundRect(mx, mb.y, mb.w, mb.h, 12, 'rgba(8,43,74,.88)', '#38bdf8', 2.5);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#bae6fd'; ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('起始倍數 MULTIPLIER', mx + 14, mb.y + 15);
+  ctx.textAlign = 'right';
   const showMult = inSettle ? curMult : startMult;
   ctx.fillStyle = showMult > 1 ? '#facc15' : '#fff';
   ctx.font = 'bold 28px Arial';
-  ctx.fillText('×' + showMult, mb.x + mb.w - 14, mb.y + mb.h - 19);
+  ctx.fillText('×' + showMult, mx + mb.w - 14, mb.y + mb.h - 19);
+
+  drawSlamRings(sh.gapCx, sb.y + sb.h / 2);
+
   if (currentState === STATE.MULT_BOOST) {
     const k = stateTimer / Math.max(1, F_MULTBOOST);
     ctx.save();
@@ -1989,7 +2201,7 @@ function drawScoreBoxes() {
     ctx.strokeStyle = '#facc15'; ctx.lineWidth = 4;
     ctx.shadowColor = '#facc15'; ctx.shadowBlur = 30;
     ctx.beginPath();
-    ctx.roundRect(mb.x - 6 * k, mb.y - 6 * k, mb.w + 12 * k, mb.h + 12 * k, 14);
+    ctx.roundRect(mx - 6 * k, mb.y - 6 * k, mb.w + 12 * k, mb.h + 12 * k, 14);
     ctx.stroke();
     ctx.restore();
   }
@@ -2401,6 +2613,7 @@ function draw() {
   drawFGCounter();
   drawHandLabel();
   drawParticles();
+  drawSlamResult();
   drawStatsBar();
   drawUI();
   drawForceMenu();
@@ -2441,7 +2654,7 @@ document.getElementById('infoTitle').textContent = GAME_NAME;
  * 區塊 7：調校面板（換遊戲原則上不用動）
  * ========================================================== */
 const TUNE_KEY = 'crescendo_tuning';
-const TUNE_VERSION = 3;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
+const TUNE_VERSION = 4;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
 let tunePanelOpen = false, tuneTab = 'timing';
 let layoutSelected = null, layoutDrag = null;
 let layoutFieldRefs = {}, layoutRangeRefs = {};

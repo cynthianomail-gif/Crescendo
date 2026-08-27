@@ -8,3 +8,6 @@ _shot*.png
 _shot_*.html
 _shot_*.png
 _shot_probe.html
+# 驗證產物
+tools/chromeprof/
+tools/verify_report.txt

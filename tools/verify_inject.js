@@ -357,6 +357,7 @@ function run() {
     var sts = [STATE.IDLE, STATE.SPINNING, STATE.FREE_COLLECT, STATE.WILD_CONVERT,
                STATE.SHOWING_WIN, STATE.FEAT_APPLY, STATE.PRE_HOLD, STATE.SCORE_RUN,
                STATE.POST_HOLD, STATE.MULT_BOOST, STATE.RESPIN_PREP, STATE.DRAW_HINT,
+               STATE.MULT_SLAM, STATE.SCORE_HOLD,
                STATE.BIGWIN, STATE.FG_ENTER, STATE.FG_END];
     features = rollFeatures(5);
     handLabelText = 'FLUSH DRAW'; handLabelKind = 'draw';
@@ -384,7 +385,7 @@ function run() {
   /* ===== 10b. 得分牌抬起（出牌感）與功能卡命中箭頭 ===== */
   NOTE('10b. 抬起與箭頭');
   reset();
-  T('TUNE_VERSION 已升版（DEFAULT 結構有變）', TUNE_VERSION === 3, TUNE_VERSION);
+  T('TUNE_VERSION 已升版（DEFAULT 結構有變）', TUNE_VERSION === 4, TUNE_VERSION);
 
   // --- 哪張牌命中哪張功能卡 ---
   var T_RANK2 = 0, T_SUIT_H = 14, T_FACE = 17;   // TIERS: 0~12 點數 / 13~16 ♠♥♦♣ / 17 人頭
@@ -516,6 +517,121 @@ function run() {
   }
   var lfA = liftFrames(0.1), lfB = liftFrames(1.0);
   T('端對端：拉長抬起時長 → 抬到頂的幀數變多', lfA > 0 && lfB > lfA * 4, lfA + ' → ' + lfB);
+
+  /* ===== 10d. 【得分相乘演繹】[§美術需求說明 F47/H47] 與【復原演繹】[H48] ===== */
+  NOTE('10d. 得分相乘演繹');
+  reset();
+
+  // --- 位移幾何：靠攜完成時兩框真的碰在一起（只留 slamGap）---
+  slamK = 0;
+  var sh0 = slamShift();
+  T('10d 未演繹時兩欄在原位', Math.abs(sh0.sdx) < 1e-9 && Math.abs(sh0.mdx) < 1e-9,
+    sh0.sdx + '/' + sh0.mdx);
+  slamK = 1;
+  var sh1 = slamShift();
+  var lRight = LAYOUT.scoreBox.x + sh1.sdx + LAYOUT.scoreBox.w;
+  var rLeft  = LAYOUT.multBox.x + sh1.mdx;
+  T('10d 靠攜後兩框間距 = slamGap', Math.abs((rLeft - lRight) - FX.slamGap) < 1e-6,
+    'gap=' + (rLeft - lRight).toFixed(3) + ' 期望=' + FX.slamGap);
+  T('10d 碰撞點落在兩框中線（蓋過×符號）',
+    Math.abs((lRight + rLeft) / 2 - sh0.gapCx) < 1e-6,
+    'hit=' + ((lRight + rLeft) / 2).toFixed(2) + ' ×符號=' + sh0.gapCx);
+  T('10d 兩框靠攜方向相反（得分往右、倍數往左）', sh1.sdx > 0 && sh1.mdx < 0,
+    sh1.sdx.toFixed(1) + '/' + sh1.mdx.toFixed(1));
+  // 拖過佈局分頁也不能跑掉
+  var keepX = LAYOUT.multBox.x;
+  LAYOUT.multBox.x = keepX + 60;
+  var sh2 = slamShift();
+  T('10d 改佈局後碰撞點跟著走',
+    Math.abs((LAYOUT.scoreBox.x + sh2.sdx + LAYOUT.scoreBox.w + LAYOUT.multBox.x + sh2.mdx) / 2 - sh2.gapCx) < 1e-6);
+  LAYOUT.multBox.x = keepX;
+  slamK = 0;
+
+  // --- 端對端：真的走 startSpin/update，看演繹順序與碰撞事件 ---
+  function slamRun(force) {
+    reset(); ODDS.wToWild = 0; ODDS.maxRound = 1; forceSpinType = force || 'pair';
+    var order = [], hitAt = -1, resAt = -1, restored = -1, n = 0, prev = -1;
+    var maxShift = 0, resScore = 0, resBase = 0, resMult = 0;
+    startSpin();
+    while (n < 200000) {
+      update(); n++;
+      if (currentState !== prev) { order.push(currentState); prev = currentState; }
+      if (slamHit && hitAt < 0) hitAt = n;
+      if (slamResult && resAt < 0) {
+        resAt = n; resScore = slamResult.score; resBase = slamResult.base; resMult = slamResult.mult;
+      }
+      maxShift = Math.max(maxShift, Math.abs(slamShift().sdx));
+      if (hitAt > 0 && restored < 0 && slamK <= 1e-6
+          && currentState !== STATE.MULT_SLAM && currentState !== STATE.PRE_HOLD) restored = n;
+      if (currentState === STATE.IDLE && !inFG) break;
+    }
+    return { order: order, hitAt: hitAt, resAt: resAt, restored: restored, steps: n,
+             maxShift: maxShift, resScore: resScore, resBase: resBase, resMult: resMult };
+  }
+  function idxOf(order, st) { return order.indexOf(st); }
+
+  var sr = slamRun('pair');
+  T('10d 端對端：走過 MULT_SLAM', idxOf(sr.order, STATE.MULT_SLAM) >= 0, sr.order.join('>'));
+  T('10d 端對端：走過 SCORE_HOLD', idxOf(sr.order, STATE.SCORE_HOLD) >= 0);
+  T('10d 順序：PRE_HOLD → MULT_SLAM',
+    idxOf(sr.order, STATE.PRE_HOLD) >= 0 && idxOf(sr.order, STATE.MULT_SLAM) > idxOf(sr.order, STATE.PRE_HOLD));
+  T('10d 順序：MULT_SLAM → POST_HOLD（演繹後、跑分前停留）',
+    idxOf(sr.order, STATE.POST_HOLD) > idxOf(sr.order, STATE.MULT_SLAM));
+  T('10d 順序：POST_HOLD → SCORE_RUN（停留完才跑分）[§層級 F5]',
+    idxOf(sr.order, STATE.SCORE_RUN) > idxOf(sr.order, STATE.POST_HOLD));
+  T('10d 順序：SCORE_RUN → SCORE_HOLD',
+    idxOf(sr.order, STATE.SCORE_HOLD) > idxOf(sr.order, STATE.SCORE_RUN));
+  T('10d 碰撞事件有發生', sr.hitAt > 0, 'frame=' + sr.hitAt);
+  T('10d 盤面中央出現最終得分', sr.resAt > 0, 'frame=' + sr.resAt);
+  T('10d 中央數字 = 得分 × 倍數', sr.resScore === Math.round(sr.resBase * sr.resMult),
+    sr.resBase + ' × ' + sr.resMult + ' = ' + sr.resScore);
+  T('10d 中央數字 = 本回合得分 roundWin', sr.resScore === roundWin, sr.resScore + ' vs ' + roundWin);
+  T('10d 演繹期間兩欄真的有移動', sr.maxShift > 10, 'maxShift=' + sr.maxShift.toFixed(1));
+  T('10d 【復原演繹】局末兩欄回到原位 [H48]', Math.abs(slamShift().sdx) < 1e-9 && slamK === 0,
+    'slamK=' + slamK);
+  T('10d 局末中央結果牌已清掉', slamResult === null);
+
+  // --- 節奏接線：拉長相乘演繹→MULT_SLAM 幀數變多 ---
+  function slamFrames(sec) {
+    reset(); ODDS.wToWild = 0; ODDS.maxRound = 1; forceSpinType = 'pair';
+    TIMING.multSlam = sec; applyTuning();
+    var c = 0, n = 0;
+    startSpin();
+    while (n < 200000) {
+      update(); n++;
+      if (currentState === STATE.MULT_SLAM) c++;
+      if (currentState === STATE.IDLE && !inFG) break;
+    }
+    TIMING.multSlam = DEFAULT_TIMING.multSlam; applyTuning();
+    return c;
+  }
+  var msA = slamFrames(0.1), msB = slamFrames(2.0);
+  T('10d 拉長「兩欄位碰撞時長」→ MULT_SLAM 幀數變多', msB > msA * 4, msA + ' → ' + msB);
+  var srZero = (function () {
+    reset(); ODDS.wToWild = 0; ODDS.maxRound = 1; forceSpinType = 'pair';
+    TIMING.multSlam = 0; applyTuning();
+    var hit = false, n = 0;
+    startSpin();
+    while (n < 200000) { update(); n++; if (slamHit) hit = true; if (currentState === STATE.IDLE && !inFG) break; }
+    TIMING.multSlam = DEFAULT_TIMING.multSlam; applyTuning();
+    return hit;
+  })();
+  T('10d 時長調成 0 也不會漏掉碰撞事件', srZero === true);
+
+  // --- 跳過：兩個新狀態都要能被 skip 推完 ---
+  reset(); ODDS.wToWild = 0; ODDS.maxRound = 1; forceSpinType = 'pair';
+  startSpin();
+  var skOk = true, sawSlam = false, n3 = 0;
+  while (n3 < 200000) {
+    update(); n3++;
+    if (currentState === STATE.MULT_SLAM || currentState === STATE.SCORE_HOLD) {
+      sawSlam = true;
+      if (skipCurrent() !== true) skOk = false;
+    }
+    if (currentState === STATE.IDLE && !inFG) break;
+  }
+  T('10d MULT_SLAM / SCORE_HOLD 可以被跳過', sawSlam && skOk);
+  reset();
 
   /* ===== 10c. 版面幾何（把只有肉眼看得到的重疊問題釘住）===== */
   NOTE('10c. 版面幾何');
