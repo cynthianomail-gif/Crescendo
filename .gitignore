@@ -1,0 +1,7 @@
+# 企劃書原檔（253MB，不進版控）
+*.xlsx
+*.pptx
+# 備份與暫存
+*.bak-*
+_verify_*.html
+_shot*.png
