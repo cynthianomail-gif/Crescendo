@@ -147,7 +147,7 @@ function run() {
   var dsi = makeHand('drawst'), dfi = makeHand('drawfl');
   T('強開生成 差一張(順子)', !!dsi && classifyHand(dsi) === null && findDraw(dsi).kind === 'straight');
   T('強開生成 差一張(同花)', !!dfi && classifyHand(dfi) === null && findDraw(dfi).kind === 'flush');
-  T('強開選單 21 項', forceMenuOptions().length === 21, forceMenuOptions().length);
+  T('強開選單 25 項（含 4 個跑分測試選項）', forceMenuOptions().length === 25, forceMenuOptions().length);
   var fmr = forceMenuRect();
   T('強開選單幾何：rects 數 = 選項數', fmr.rects.length === fmr.opts.length);
   T('強開選單不超出畫面上緣', fmr.my0 >= 0, 'my0=' + fmr.my0);
@@ -884,6 +884,76 @@ function run() {
   var nb = bigWinTrace(0.1, 1, 3);
   T('10j 沒達門檻的局不報大獎', nb.bigAtRound === -1 && nb.count === 0,
     'spinWin=' + nb.spinWin + ' 門檻=' + (FX.bigWinRatio * ODDS.bet));
+  reset();
+
+  /* ===== 10k. 「直接測跑分」的強開選項（使用者 2026-08-28）=====
+     一般強開的牌型倍數大多 <10 倍、又有隨機功能卡，重現不了想看的那一段演繹。
+     這四個選項固定牌型與起始倍數、不發功能卡，按下去必定落在指定級距。 */
+  NOTE('10k. 強開的跑分測試選項');
+  reset();
+
+  var DEMO_CASES = [
+    ['demoNoRun', 5,   false, ''],           // 5 倍   → 不跑分
+    ['demoRun',   10,  true,  ''],           // 10 倍  → 跑分
+    ['demoBig',   25,  null,  'BIG WIN'],    // 25 倍  → 大獎（不出中央面板）
+    ['demoEpic',  400, null,  'EPIC WIN'],   // 400 倍 → 大獎 EPIC
+  ];
+  T('10k 四個選項都在強開選單上',
+    DEMO_CASES.every(function (c) {
+      return forceMenuOptions().some(function (o) { return o.value === c[0]; });
+    }));
+
+  function demoRun(v) {
+    reset(); ODDS.wToWild = 0; ODDS.maxRound = 1;
+    forceSpinType = v;
+    var n = 0, ratio = -1, run = null, panelFrames = 0, big = '', featCount = -1;
+    var firstCenter = null, lastCenter = null, bigFirst = null, bigLast = null;
+    startSpin();
+    while (n < 200000) {
+      update(); n++;
+      if (featCount < 0 && currentState === STATE.SCORE_RUN) featCount = features.length;
+      if (currentState === STATE.SCORE_RUN && slamResult) {
+        panelFrames++;
+        if (run === null) { run = slamResult.run; ratio = slamResult.score / Math.max(1, ODDS.bet); }
+        var cv = slamResultValue();
+        if (firstCenter === null) firstCenter = cv;
+        lastCenter = cv;
+      }
+      if (currentState === STATE.BIGWIN) {
+        if (!big) { big = bigWinLabel; ratio = ratio < 0 ? roundWin / Math.max(1, ODDS.bet) : ratio; }
+        if (bigFirst === null) bigFirst = bigWinValue();
+        bigLast = bigWinValue();
+      }
+      if (currentState === STATE.IDLE && !inFG) break;
+    }
+    return { ratio: ratio, run: run, panelFrames: panelFrames, big: big, feats: featCount,
+             center: [firstCenter, lastCenter], bigVals: [bigFirst, bigLast] };
+  }
+
+  DEMO_CASES.forEach(function (c) {
+    var key = c[0], want = c[1], wantRun = c[2], wantBig = c[3];
+    var r = demoRun(key);
+    T('10k ' + key + '：第一回合就是 ' + want + ' 倍（固定，不受功能卡影響）',
+      Math.abs(r.ratio - want) < 1e-6, 'ratio=' + r.ratio);
+    if (wantBig) {
+      T('10k ' + key + '：報 ' + wantBig, r.big === wantBig, r.big);
+      T('10k ' + key + '：不出中央得分面板（改在大獎畫面跑分）', r.panelFrames === 0, r.panelFrames);
+      T('10k ' + key + '：大獎畫面的數字有跑（0 → ' + want * 100 + '）',
+        r.bigVals[0] === 0 && r.bigVals[1] > 0, r.bigVals.join(' → '));
+    } else {
+      T('10k ' + key + '：沒有大獎', r.big === '', r.big);
+      T('10k ' + key + '：中央面板有出現', r.panelFrames > 0, r.panelFrames);
+      T('10k ' + key + '：跑分判定 = ' + (wantRun ? '跑' : '不跑'), r.run === wantRun, String(r.run));
+      T('10k ' + key + '：中央數字' + (wantRun ? '有在跑' : '整段不動'),
+        wantRun ? (r.center[1] > r.center[0]) : (r.center[1] === r.center[0]),
+        r.center.join(' → '));
+    }
+  });
+  // 重跑一次確認可重現（一般強開會因為隨機功能卡飄掉，這四個不會）
+  var rep1 = demoRun('demoRun'), rep2 = demoRun('demoRun');
+  T('10k 同一個選項連按兩次結果一樣（可重現）',
+    rep1.ratio === rep2.ratio && rep1.run === rep2.run, rep1.ratio + ' / ' + rep2.ratio);
+  forceSpinType = null;
   reset();
 
   /* ===== 10e. 改色 + 盤面框燈條 + 起始倍數加倍撞擊（2026-08-27）===== */

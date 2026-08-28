@@ -248,7 +248,7 @@ canvas { display: block; width: 100%; height: 100%; }
  * 面板本身（區塊 7）原則上不用動。
  * ========================================================== */
 
-const APP_BUILD = 'crescendo-11';   // 驗證用識別值：測到的是不是最新版，看這個
+const APP_BUILD = 'crescendo-12';   // 驗證用識別值：測到的是不是最新版，看這個
 const GAME_NAME = 'Crescendo';
 
 const canvas = document.getElementById('gameCanvas');
@@ -799,6 +799,11 @@ function forceMenuOptions() {
     { label: '五條',        value: 'five',    color: '#e879f9' },
     { label: '差一張(順子)', value: 'drawst',  color: '#c084fc' },
     { label: '差一張(同花)', value: 'drawfl',  color: '#c084fc' },
+    // 直接測【跑分規則】用（固定倍數、不發功能卡，結果才可預測）[使用者 2026-08-28]
+    { label: '不跑分 5倍',   value: 'demoNoRun', color: '#facc15' },
+    { label: '跑分 10倍',    value: 'demoRun',   color: '#facc15' },
+    { label: '大獎 25倍',    value: 'demoBig',   color: '#22c55e' },
+    { label: '大獎 400倍',   value: 'demoEpic',  color: '#a855f7' },
     { label: 'FREE ×1',     value: 'free1',   color: '#22d3ee' },
     { label: 'FREE ×2(預報)',value: 'free2',   color: '#22d3ee' },
     { label: 'FREE ×3→FG',  value: 'free3',   color: '#10b981' },
@@ -809,6 +814,23 @@ function forceMenuOptions() {
     { label: '買SUPER FREE', value: 'buysf',   color: '#f472b6' },
   ];
 }
+
+/* 「直接測跑分」的強開選項 [使用者 2026-08-28]：牌型單獨中獎的倍數大多遠低於 10 倍
+ * （一對 0.1／鐵支 5／同花順 10／五條 25），加上功能卡是隨機的，
+ * 一般的強開很難重現想看的那一段演繹。這幾個選項固定牌型與起始倍數、**不發功能卡**，
+ * 所以每次按下去都會落在同一個級距：
+ *   demoNoRun 5 倍   → 星城規則不跑分（中央面板直接顯示最終得分）
+ *   demoRun   10 倍  → 跑分（中央面板一出現就在跑）
+ *   demoBig   25 倍  → 大獎 BIG WIN（不出中央面板，改在大獎畫面跑分）
+ *   demoEpic  400 倍 → 大獎 EPIC WIN
+ * mult 是起始倍數；hand 是實際要落定的牌型 key。 */
+const FORCE_DEMO = {
+  // 起始倍數刻意 >1：得分欄（相乘前）與最終得分不同，跑分才看得到數字在動
+  demoNoRun: { hand: 'full',  mult: 2  },   // 葫蘆 2.5 × 2 = 5 倍   （得分 250 → 最終 500）
+  demoRun:   { hand: 'four',  mult: 2  },   // 鐵支 5   × 2 = 10 倍  （得分 500 → 最終 1,000）
+  demoBig:   { hand: 'five',  mult: 1  },   // 五條 25  × 1 = 25 倍
+  demoEpic:  { hand: 'five',  mult: 16 },   // 五條 25  × 16 = 400 倍
+};
 
 /* --- 執行期值：由預設複製而來，面板改的是這幾份 --- */
 // 節奏有 AUTO / TURBO 兩組。TIMING 永遠指向「當前生效」那一組，
@@ -1827,7 +1849,8 @@ function finishSpin() {
 function startSpin() {
   if (currentState !== STATE.IDLE || isPaused) return;
   const buy = forceSpinType;
-  forceActive = buy;
+  const demo = FORCE_DEMO[buy];              // 「直接測跑分」的強開選項
+  forceActive = demo ? demo.hand : buy;      // 落定盤面用對照表指定的牌型
   spinWin = 0; displayScore = 0; roundIdx = 0;
   payUnits = 0;                             // 得分欄歸零（新的一局還沒有得分）
   scoredKeys = new Set();
@@ -1849,6 +1872,8 @@ function startSpin() {
     // 購買選項 [§一般遊戲 D22:E26]（demo 不做扣款，只還原進入狀態）
     features = rollFeatures(
       (buy === 'buy3f') ? 3 : (buy === 'buy5f' || buy === 'buysf') ? 5 : undefined);
+    // 測跑分的選項：不發功能卡、固定起始倍數，這樣倍數才可預測（見 FORCE_DEMO）
+    if (demo) { features = []; startMult = demo.mult; }
     if (buy === 'buyhunt') freeCount = 1;   // FREE HUNT：預收集 1 個
     if (buy === 'buyfree' || buy === 'buysf') { fgPending = true; isSFG = (buy === 'buysf'); }
   }
