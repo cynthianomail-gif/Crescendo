@@ -244,7 +244,7 @@ canvas { display: block; width: 100%; height: 100%; }
  * 面板本身（區塊 7）原則上不用動。
  * ========================================================== */
 
-const APP_BUILD = 'crescendo-7';   // 驗證用識別值：測到的是不是最新版，看這個
+const APP_BUILD = 'crescendo-8';   // 驗證用識別值：測到的是不是最新版，看這個
 const GAME_NAME = 'Crescendo';
 
 const canvas = document.getElementById('gameCanvas');
@@ -343,7 +343,7 @@ TIERS.push({ kind: 'face', v: 0, label: '人頭' });        // 共 18 種
 /* 功能色系。企劃 `[§美術需求說明 E20]` 原文是「得分功能＝黃／倍數功能＝藍」，
  * 但同一格也寫明「可依據後續美術視覺進行顏色調整」——
  * 使用者 2026-08-27 改色：**倍數功能 藍 → 紫**；**轉換 WILD 改彩色**（對應 [E29]「底板彩色、燈條彩色」）。
- * 這三個色是全檔唯一來源：功能卡底板／盤面命中框／命中雙箭頭／外框燈條都讀這裡。 */
+ * 這三個色是全檔唯一來源：功能卡底板／盤面命中框／命中雙箭頭都讀這裡。 */
 const CAT_COLOR = { score: '#facc15', mult: '#c084fc', special: '#f8fafc' };
 const CAT_GLOW  = { score: '#f59e0b', mult: '#a855f7', special: '#ffffff' };
 const CAT_PLATE = { score: 'rgba(113,78,6,.90)', mult: 'rgba(64,22,110,.90)', special: null };
@@ -354,12 +354,6 @@ function rainbowGrad(x0, y0, x1, y1) {
   for (let i = 0; i < RAINBOW.length; i++) g.addColorStop(i / (RAINBOW.length - 1), RAINBOW[i]);
   return g;
 }
-// 會隨時間流動的彩虹（燈條用）
-function rainbowAt(k) {
-  const n = RAINBOW.length;
-  return RAINBOW[((Math.floor(k) % n) + n) % n];
-}
-
 const FEAT_TYPES = [
   { key: 'addScore', name: '加得分',   cat: 'score',   color: CAT_COLOR.score,   sign: '+',
     values: [0.25, 0.5, 1, 5, 10, 25], weights: [30, 25, 20, 13, 8, 4], wKey: 'wAddScore' },
@@ -387,7 +381,6 @@ const DEFAULT_TIMING = {
   cardLift:       0.34,   // 得分牌抬起（出牌感）動畫時長 [自設]
   cardLiftStagger:0.06,   // 得分牌逐張抬起的錯開間隔 [自設]
   featTrigger:    0.45,   // 功能卡逐張觸發演繹 [自設：§美術需求說明無秒數]
-  lampFlash:      0.45,   // 盤面外框燈條「發光一次」的衰減時長 [§美術 H36:H40]（秒數 [自設]）
   multSlam:       0.60,   // 得分相乘演繹：兩欄位往中間碰撞 [§美術需求說明 H47]（秒數 [自設]，該分頁無秒數）
   slamRestore:    0.35,   // 復原演繹：兩欄位往左右回原位 [§美術需求說明 H48]（秒數 [自設]）
   preHold1:       0.30,   // 1階 得分相乘演繹前停留 [§高倍得分層級 E6]
@@ -424,7 +417,6 @@ const DEFAULT_TIMING_TURBO = {
   cardLift:        0.20,
   cardLiftStagger: 0.03,
   featTrigger:     0.25,
-  lampFlash:       0.30,
   multSlam:        0.60,   // 重要機制，不加速
   slamRestore:     0.20,
   preHold1:        0.30,   // 得分層級停留：SOP 不可加速重要演出 → 與 AUTO 相同
@@ -470,7 +462,6 @@ const RHYTHM_MAP = [
   ['cardLift',         '得分牌抬起演繹',      '得分牌往上彈出、放大、扇形傾斜的持續時間',           '圖示演繹'],
   ['cardLiftStagger',  '得分牌逐張錯開',      '得分牌抬起時每張之間的錯開間格',                     null],
   ['featTrigger',      '功能卡觸發演繹',      '每張功能卡由左至右逐一觸發的持續時間',               '圖示演繹'],
-  ['lampFlash',        '盤面框燈條發光',      '盤面外框燈條「發光一次」的衰減時長',                 null],
   ['preHold1',         '得分相乘前停頓a3',    '1階：功能卡套用完畢，到得分相乘演繹前的停頓',        null],
   ['preHold2',         '得分相乘前停頓a4',    '2階（25倍以上）',                                    null],
   ['preHold3',         '得分相乘前停頓a5',    '3階（101倍以上）',                                   null],
@@ -573,8 +564,6 @@ const TIMING_META = [
     ['featTrigger', '功能卡逐張觸發'],
     ['scoreAppear', '中獎後出現分數'], ['scoreHold', '分數停留'],
     ['symbolFx', '圖示演繹'], ['multBoost', '起始倍數加倍'] ] },
-  { group: '盤面框燈條 [§美術 F36:F42]', items: [
-    ['lampFlash', '燈條發光一次時長'] ] },
   { group: '得分相乘演繹 [§美術 F47/F48]', items: [
     ['multSlam', '兩欄位碰撞時長'], ['slamRestore', '復原回位時長'] ] },
   { group: '得分層級停留（1/2/3 階）', items: [
@@ -592,7 +581,6 @@ const DEFAULT_TIMING_START = {
   reelStart: 0, reelStopInterval: 1.00, reelSpeed: 0, landBounce: 1.80,
   winHold: 0, cardLock: 0.40, cardLift: 0.40, cardLiftStagger: 0.40, featTrigger: 0.70,
   preHold1: 1.15, preHold2: 1.15, preHold3: 1.15,
-  lampFlash: 0,
   multSlam: 1.45,
   postHold1: 2.05, postHold2: 2.05, postHold3: 2.05,
   scoreAppear: 2.35, scoreHold: 3.35, slamRestore: 4.05,
@@ -683,8 +671,6 @@ const DEFAULT_FX = {
   slamResultPop:  1.40, // 盤面中央最終得分彈出的放大峰值
   slamResultSize: 62,   // 盤面中央最終得分字級
   slamResultPlate: 0.9, // 中央結果的底板不透明度（0 = 不要底板，數字直接疊在牌上）
-  // 盤面外框燈條 [§美術 F36:F42]
-  lampCount: 14, lampH: 7, lampGlow: 26, lampBreathMs: 300, lampIdle: 0.45,
   // 起始倍數加倍演繹 [§美術 H12]：牌組聚集重疊、向上撞擊、噴雙箭頭光效
   boostLiftY: 46, boostGather: 0.30, boostScale: 1.08, boostChevrons: 18,
   featGlow: 22, featBreath: 900,             // 功能卡待機呼吸 [§美術：恆亮+微弱呼吸]
@@ -717,10 +703,6 @@ const FX_META = [
     ['boostGather', '牌組聚集重疊(0~1)', 0, 0.9, 0.02],
     ['boostScale', '撞擊放大(倍)', 1, 1.6, 0.01],
     ['boostChevrons', '雙箭頭光效數', 0, 60, 1] ] },
-  { group: '盤面框燈條 [§美術 F36:F42]', items: [
-    ['lampCount', '燈條段數', 2, 40, 1], ['lampH', '燈條高度(px)', 2, 24, 0.5],
-    ['lampGlow', '燈條發光', 0, 80, 1], ['lampBreathMs', '預報呼吸(ms)', 80, 1200, 10],
-    ['lampIdle', '待機亮度(0~1)', 0, 1, 0.02] ] },
   { group: '功能卡命中雙箭頭 [§美術 H11]', items: [
     ['arrowSize', '箭頭大小(px)', 4, 40, 1], ['arrowGap', '雙箭頭間距(×大小)', 0.2, 2, 0.02],
     ['arrowGlow', '箭頭發光', 0, 80, 1],
@@ -874,7 +856,7 @@ let F_CARDLIFT = 20, F_LIFTSTAG = 4;
 let F_WINHOLD = 24, F_CARDLOCK = 18, F_FEAT = 27, F_SCOREAPPEAR = 60, F_SCOREHOLD = 42;
 let F_SYMFX = 60, F_MULTBOOST = 48, F_RESPIN = 24, F_IDLE = 24, F_DRAWHINT = 60;
 let F_FREECOL = 36, F_BIGWIN = 108, F_FGENTER = 96, F_FGGAP = 24, F_AUTO = 27;
-let F_MULTSLAM = 36, F_SLAMRESTORE = 21, F_LAMPFLASH = 27;
+let F_MULTSLAM = 36, F_SLAMRESTORE = 21;
 const SLAM_HIT_AT = 0.55;   // 相乘演繹進行到幾成時「相撞」（前段靠攏、後段回彈）
 let F_PRE = [], F_POST = [];
 let POP_TIERS = [], WIN_FRAME_TIERS = [], SHAKE_TIERS = [], ZOOM_TIERS = [];
@@ -900,7 +882,6 @@ function applyTuning() {
   F_SYMFX       = TF(TIMING.symbolFx);
   F_MULTBOOST   = TF(TIMING.multBoost);
   F_MULTSLAM    = TF(TIMING.multSlam);
-  F_LAMPFLASH   = TF(TIMING.lampFlash);
   F_SLAMRESTORE = TF(TIMING.slamRestore);
   F_RESPIN      = TF(TIMING.respinPause);
   F_IDLE        = TF(TIMING.idleGap);
@@ -1047,15 +1028,9 @@ let slamK = 0, slamHit = false;
 let slamRings = [];
 let slamResult = null;
 
-/* 盤面外框上方的燈條 [§美術需求說明 D36 / F36:H42]
- * 七種演繹共用這一條：
- *   一次性發光 fireLamps()：啟動＝綠 H36／功能觸發＝依功能卡顏色 H37／WILD 功能觸發＝彩色 H38／
- *                           起始倍數加倍＝紫 H39／FREE 圖示觸發＝紅 H40
- *   持續呼吸（由狀態推導）：FREE 預報＝微弱快速紅 H41／順子・同花預報＝微弱紫 H42 */
-let lampFlash = null;          // { t, life, color, rainbow }
-function fireLamps(color, rainbow) {
-  lampFlash = { t: 0, life: Math.max(1, F_LAMPFLASH), color: color || '#4ade80', rainbow: !!rainbow };
-}
+/* 盤面外框上方的燈條 [§美術需求說明 D36 / F36:H42] 曾在 2026-08-27 補做過，
+ * 使用者 2026-08-28 決定拿掉（含節奏／特效面板項目）。要復原就回 git 的 abbd783。
+ * 相關的 FREE 預報 H41 / 順子・同花預報 H42 仍保留在右側 FREE 計量條上。 */
 
 /* 盤面的【起始倍數加倍演繹】[§美術需求說明 H12]
  *   └①得分牌組縮放發光一次，此時畫面微弱震動像是集氣
@@ -1444,8 +1419,6 @@ function applyFeatureAt(i) {
   else if (t.key === 'addMul')   curMult += f.value;
   else if (t.key === 'mulMul')   curMult *= f.value;
   f.flash = 1;
-  // 外框上方的燈條發光一次，顏色依據功能牌卡的顏色 [§美術 H37]
-  fireLamps(CAT_COLOR[t.cat] || CAT_COLOR.mult, t.cat === 'special');
 }
 // 得分 = 押注 × 牌型賠率（含功能卡加成）；彩金 = 得分 × 倍數 [§一般遊戲 F95/F96]
 function scoreNow() { return ODDS.bet * payUnits * ODDS.payMul; }
@@ -1622,14 +1595,12 @@ function onReelsStopped() {
     if (freeCount >= ODDS.fgFree) fgPending = true;      // 局末才進 FG [§FREE GAME D18]
     currentState = STATE.FREE_COLLECT;
     stateTimer = 0;
-    fireLamps('#f87171');                 // FREE 圖示觸發：燈條發光一次，紅 [§美術 H40]
     return;
   }
   // 2) 轉換 WILD 功能卡
   const conv = applyWildConvert();
   if (conv.length > 0) {
     wildBeams = conv.map(c => ({ c: c, t: 0 }));
-    fireLamps(null, true);                // WILD 功能觸發：燈條發光一次，彩色 [§美術 H38]
     currentState = STATE.WILD_CONVERT;
     stateTimer = 0;
     return;
@@ -1796,7 +1767,6 @@ function startSpin() {
   particles = []; floatTexts = []; wildBeams = [];
   slamK = 0; slamHit = false; slamRings = []; slamResult = null;   // 復原演繹 [§美術 H48]
   boostK = 0; boostHit = false; boostChevrons = [];
-  fireLamps('#4ade80');            // 【啟動演繹】所有燈條發出綠光一次 [§美術 H36]
   handLabelText = ''; handLabelKind = '';
 
   if (!inFG) {
@@ -1892,7 +1862,6 @@ function update() {
   wildBeams.forEach(b => { b.t++; });
   slamRings = slamRings.filter(r => { r.t++; return r.t < r.life; });
   if (slamResult) slamResult.t++;
-  if (lampFlash) { lampFlash.t++; if (lampFlash.t >= lampFlash.life) lampFlash = null; }
   boostChevrons = boostChevrons.filter(v => { v.t++; return v.t < v.life; });
   updateLift();
 
@@ -2016,7 +1985,6 @@ function update() {
       // [§一般遊戲 E47]。企劃未寫上限，用 [自設] 的 maxStartMult 收斂，否則單局贏分會失控
       if (stateTimer === 1) {
         startMult = Math.min(ODDS.maxStartMult, startMult * 2);
-        fireLamps('#a855f7');             // 起始倍數加倍：燈條發光一次，紫 [§美術 H39]
         boostK = 0; boostHit = false; boostChevrons = [];
         shakeAmp = Math.max(shakeAmp, FX.shake1);   // ①集氣：畫面微弱震動 [§美術 H12①]
       }
@@ -2179,7 +2147,6 @@ function drawBoard() {
     roundRect(GRID_X - 10, GRID_Y - 10, GRID_W + 20, GRID_H + 20, 18,
       'rgba(2,6,23,.78)', '#334155', 2);
   }
-  drawFrameLamps(now);
 
   // --- 第一段：還在轉的欄。要裁切，否則上方的預備牌會露到盤面外 ---
   ctx.save();
@@ -2358,53 +2325,6 @@ function drawBoard() {
     }
     ctx.restore();
   });
-  ctx.restore();
-}
-
-/* 盤面外框上方的燈條 [§美術需求說明 D36 / F36:H42]
- * 一次性發光（fireLamps）：啟動＝綠 H36／功能觸發＝依卡色 H37／WILD＝彩色 H38／
- *                          起始倍數加倍＝紫 H39／FREE 圖示觸發＝紅 H40
- * 持續呼吸（由狀態推導）：FREE 預報＝微弱快速紅 H41／順子・同花預報＝微弱紫 H42 */
-function frameLampBreath() {
-  if (currentState === STATE.DRAW_HINT) return { color: '#c084fc', ms: FX.lampBreathMs * 1.6 };
-  const need = Math.max(1, ODDS.fgFree);
-  // 「已經收集 2 個 FREE 圖示，且滾輪持續滾動時」[§美術 G41]
-  if (!inFG && freeCount === need - 1 && currentState === STATE.SPINNING) {
-    return { color: '#f87171', ms: FX.lampBreathMs };
-  }
-  return null;
-}
-function drawFrameLamps(now) {
-  const n = Math.max(2, Math.round(FX.lampCount));
-  const h = Math.max(1, FX.lampH);
-  // 畫在盤面外框上緣的「內側」——它是外框的一部分，不是浮在框外的獨立物件；
-  // 放框外會撞到得分牌抬起的路徑。
-  const y = GRID_Y - 10 + 4;
-  const pad = 6;
-  const segW = (GRID_W + 20 - pad * (n + 1)) / n;
-  const br = frameLampBreath();
-  let alpha = Math.max(0, Math.min(1, FX.lampIdle)), color = '#64748b', rainbow = false;
-  if (br) {
-    // 「微弱」的呼吸光 [§美術 H41/H42]
-    alpha = 0.25 + 0.35 * (0.5 + 0.5 * Math.sin(now / Math.max(60, br.ms)));
-    color = br.color;
-  }
-  if (lampFlash) {
-    const k = lampFlash.t / lampFlash.life;
-    const fa = 1 - k * k;
-    if (fa > alpha) { alpha = fa; color = lampFlash.color || '#4ade80'; rainbow = lampFlash.rainbow; }
-  }
-  ctx.save();
-  for (let i = 0; i < n; i++) {
-    const x = GRID_X - 10 + pad + i * (segW + pad);
-    const col = rainbow ? rainbowAt(i * RAINBOW.length / n + now / 90) : color;
-    ctx.globalAlpha = 1;
-    roundRect(x, y, segW, h, h / 2, 'rgba(15,23,42,.9)', null, 0);
-    ctx.globalAlpha = alpha;
-    ctx.shadowColor = col; ctx.shadowBlur = FX.lampGlow * alpha;
-    roundRect(x, y, segW, h, h / 2, col, null, 0);
-    ctx.shadowBlur = 0;
-  }
   ctx.restore();
 }
 
@@ -3114,7 +3034,7 @@ document.getElementById('infoTitle').textContent = GAME_NAME;
  * 區塊 7：調校面板（換遊戲原則上不用動）
  * ========================================================== */
 const TUNE_KEY = 'crescendo_tuning';
-const TUNE_VERSION = 6;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
+const TUNE_VERSION = 7;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
 let tunePanelOpen = false, tuneTab = 'timing';
 let layoutSelected = null, layoutDrag = null;
 let layoutFieldRefs = {}, layoutRangeRefs = {};

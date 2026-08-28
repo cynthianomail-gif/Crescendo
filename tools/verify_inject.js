@@ -387,7 +387,7 @@ function run() {
   /* ===== 10b. 得分牌抬起（出牌感）與功能卡命中箭頭 ===== */
   NOTE('10b. 抬起與箭頭');
   reset();
-  T('TUNE_VERSION 已升版（DEFAULT 結構有變）', TUNE_VERSION === 6, TUNE_VERSION);
+  T('TUNE_VERSION 已升版（DEFAULT 結構有變）', TUNE_VERSION === 7, TUNE_VERSION);
 
   // --- 哪張牌命中哪張功能卡 ---
   var T_RANK2 = 0, T_SUIT_H = 14, T_FACE = 17;   // TIERS: 0~12 點數 / 13~16 ♠♥♦♣ / 17 人頭
@@ -658,6 +658,17 @@ function run() {
   NOTE('10e. 改色與補做的演繹');
   reset();
 
+  // --- 盤面外框燈條已移除（使用者 2026-08-28）：釘住它不會被誤加回來 ---
+  T('10e 燈條的節奏參數已移除', !('lampFlash' in DEFAULT_TIMING) && !('lampFlash' in DEFAULT_TIMING_TURBO));
+  T('10e 燈條的特效參數已移除',
+    !('lampCount' in DEFAULT_FX) && !('lampGlow' in DEFAULT_FX) && !('lampIdle' in DEFAULT_FX));
+  T('10e 節奏面板沒有燈條群組',
+    TIMING_META.every(function (g) { return g.group.indexOf('燈條') < 0; }));
+  T('10e 特效面板沒有燈條群組（FREE 計量條那組不算）',
+    FX_META.every(function (g) { return g.group.indexOf('盤面框燈條') < 0; }));
+  T('10e 燈條的繪製與觸發函式已移除',
+    typeof window.drawFrameLamps === 'undefined' && typeof window.fireLamps === 'undefined');
+
   // --- 配色：倍數 = 紫（不是藍）、轉換 WILD = 彩色 ---
   T('10e 倍數色是紫的（非藍）', CAT_COLOR.mult === '#c084fc', CAT_COLOR.mult);
   T('10e 得分色仍是金的', CAT_COLOR.score === '#facc15', CAT_COLOR.score);
@@ -674,7 +685,6 @@ function run() {
   T('10e 轉換 WILD 走 special（底板由彩虹畫）',
     FEAT_TYPES[FEAT_IDX.toWild].cat === 'special' && CAT_PLATE.special === null);
   T('10e 彩虹至少 5 色', RAINBOW.length >= 5, RAINBOW.length);
-  T('10e rainbowAt 會繞回來', rainbowAt(0) === rainbowAt(RAINBOW.length) && rainbowAt(-1) === rainbowAt(RAINBOW.length - 1));
 
   // --- 命中箭頭配色：得分卡 = 金、倍數卡 = 紫、兩者都有 = mix ---
   features = [
@@ -697,60 +707,12 @@ function run() {
   T('10e mix 回傳漸層物件（不是字串）', typeof mixPaint === 'object' && !!mixPaint.addColorStop);
   T('10e catGlow 三類都有值', !!catGlow('score') && !!catGlow('mult') && !!catGlow('mix'));
 
-  // --- 盤面外框燈條 [§美術 F36:F42] ---
-  reset();
-  lampFlash = null;
-  fireLamps('#4ade80');
-  T('10e fireLamps 會點亮燈條', !!lampFlash && lampFlash.color === '#4ade80');
-  T('10e 燈條壽命 = F_LAMPFLASH', lampFlash.life === F_LAMPFLASH, lampFlash.life + '/' + F_LAMPFLASH);
-  var lampLife = lampFlash.life;
-  for (var q = 0; q < lampLife + 2; q++) update();
-  T('10e 燈條會自己熄掉', lampFlash === null);
-  fireLamps(null, true);
-  T('10e WILD 觸發是彩色燈', lampFlash.rainbow === true);
-  lampFlash = null;
-  // 呼吸態（持續，非一次性）
-  currentState = STATE.DRAW_HINT;
-  T('10e 順子/同花預報 → 紫呼吸 [H42]', frameLampBreath() && frameLampBreath().color === '#c084fc');
-  currentState = STATE.SPINNING; freeCount = ODDS.fgFree - 1; inFG = false;
-  T('10e FREE 預報（差1個且滾輪轉動）→ 紅呼吸 [H41]',
-    frameLampBreath() && frameLampBreath().color === '#f87171');
-  currentState = STATE.IDLE;
-  T('10e 待機不呼吸', frameLampBreath() === null);
-  reset();
-
-  // --- 端對端：燈條在該亮的時機真的亮 ---
-  function lampRun(force, want) {
-    reset(); ODDS.wToWild = 0; ODDS.maxRound = 1; forceSpinType = force;
-    var seen = {}, n = 0, spinLamp = null;
-    startSpin();
-    spinLamp = lampFlash ? lampFlash.color : null;
-    while (n < 200000) {
-      update(); n++;
-      if (lampFlash) seen[lampFlash.rainbow ? 'rainbow' : lampFlash.color] = 1;
-      if (currentState === STATE.IDLE && !inFG) break;
-    }
-    return { spinLamp: spinLamp, seen: seen };
-  }
-  var lr = lampRun('pair');
-  T('10e 【啟動演繹】SPIN 時燈條發綠光 [H36]', lr.spinLamp === '#4ade80', lr.spinLamp);
-  reset(); ODDS.wToWild = 0; ODDS.maxRound = 1; forceSpinType = 'pair';
-  ODDS.wAddMul = 100; ODDS.wAddScore = 0; ODDS.wMulScore = 0; ODDS.wMulMul = 0;
-  var featLamp = null, n5 = 0;
-  startSpin();
-  while (n5 < 200000) {
-    update(); n5++;
-    if (currentState === STATE.FEAT_APPLY && lampFlash && lampFlash.color !== '#4ade80') featLamp = lampFlash.color;
-    if (currentState === STATE.IDLE && !inFG) break;
-  }
-  T('10e 【功能觸發演繹】燈條顏色 = 功能卡顏色（倍數卡→紫）[H37]',
-    featLamp === null || featLamp === CAT_COLOR.mult, String(featLamp));
-  reset();
+  // 盤面外框燈條的斷言在 2026-08-28 隨燈條一起移除（使用者決定拿掉這個物件）
 
   // --- 起始倍數加倍撞擊 [§美術 H12] ---
   function boostRun() {
     reset(); ODDS.wToWild = 0; ODDS.maxRound = 2; forceSpinType = 'five';
-    var sawBoost = false, hit = false, maxK = 0, chev = 0, purple = false, n = 0;
+    var sawBoost = false, hit = false, maxK = 0, chev = 0, n = 0;
     startSpin();
     while (n < 200000) {
       update(); n++;
@@ -759,29 +721,19 @@ function run() {
         maxK = Math.max(maxK, boostK);
         if (boostHit) hit = true;
         chev = Math.max(chev, boostChevrons.length);
-        if (lampFlash && lampFlash.color === '#a855f7') purple = true;
       }
       if (currentState === STATE.IDLE && !inFG) break;
     }
-    return { sawBoost: sawBoost, hit: hit, maxK: maxK, chev: chev, purple: purple, endK: boostK };
+    return { sawBoost: sawBoost, hit: hit, maxK: maxK, chev: chev, endK: boostK };
   }
   var br2 = boostRun();
   T('10e 五條 → 走過 MULT_BOOST', br2.sawBoost);
   T('10e 【起始倍數加倍演繹】牌組真的往上撞擊 [H12②]', br2.maxK > 0.5, 'maxK=' + br2.maxK.toFixed(3));
   T('10e 撞擊事件有發生', br2.hit);
   T('10e 撞擊噴出向上雙箭頭光效 [H12③]', br2.chev > 0, 'chevrons=' + br2.chev);
-  T('10e 燈條同時發紫光 [H39]', br2.purple);
   T('10e 撞擊結束回到原先的位置 [H12④]', Math.abs(br2.endK) < 1e-9, 'endK=' + br2.endK);
   T('10e 起始倍數真的加倍了', startMult >= 2, 'startMult=' + startMult);
   reset();
-
-  // --- 節奏接線 ---
-  TIMING.lampFlash = 0.1; applyTuning(); fireLamps('#4ade80');
-  var lampA = lampFlash.life;
-  TIMING.lampFlash = 2.0; applyTuning(); fireLamps('#4ade80');
-  var lampB = lampFlash.life;
-  T('10e 拉長「燈條發光一次時長」→ 壽命變長', lampB > lampA * 4, lampA + ' -> ' + lampB);
-  TIMING.lampFlash = DEFAULT_TIMING.lampFlash; applyTuning(); lampFlash = null;
 
   // --- 測試統計（RTP）面板預設關閉 ---
   T('10e 測試統計面板預設關閉', showStatsPanel === false, String(showStatsPanel));

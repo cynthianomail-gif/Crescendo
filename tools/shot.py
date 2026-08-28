@@ -263,7 +263,6 @@ function SCENE() {
       t: 4 + (i % 9), life: 30, s: FX.arrowSize * (0.5 + ((i * 29) % 50) / 100),
     });
   }
-  fireLamps('#a855f7'); lampFlash.t = 3;
 }
 """),
     ("13_feat_colors", """
