@@ -268,23 +268,82 @@ function SCENE() {
 """),
     ("13_feat_colors", """
 function SCENE() {
-  SETB([ID(6,0), ID(6,1), ID(10,2), WILD_ID, ID(8,1)]);
-  for (var c = 0; c < 5; c++) { colStopped[c] = true; board[c][0].locked = true; }
+  // 8S 8H 8D = 三條8（得分牌 0,1,2）；QS 是 ♠ 但不得分 → 不該有箭頭
+  SETB([ID(6,0), ID(6,1), ID(6,2), ID(10,0), ID(8,3)]);
+  for (var c = 0; c < 5; c++) { colStopped[c] = true; }
   features = [
-    { type: FEAT_IDX.addScore, tier: 6,  value: 25, triggered: true,  flash: 0 },
-    { type: FEAT_IDX.mulScore, tier: 6,  value: 2,  triggered: true,  flash: 0 },
-    { type: FEAT_IDX.addMul,   tier: 10, value: 10, triggered: true,  flash: 0 },
-    { type: FEAT_IDX.mulMul,   tier: 8,  value: 3,  triggered: true,  flash: 0 },
+    { type: FEAT_IDX.addScore, tier: 13, value: 25, triggered: true,  flash: 0 },  // S -> cell0 金
+    { type: FEAT_IDX.addMul,   tier: 14, value: 10, triggered: true,  flash: 0 },  // H -> cell1 紫
+    { type: FEAT_IDX.mulMul,   tier: 15, value: 3,  triggered: true,  flash: 0 },  // D -> cell2 紫
     { type: FEAT_IDX.toWild,   tier: 17, value: 0,  triggered: false, flash: 0 },
   ];
   handResult = classifyHand(boardIds());
   winCells = new Set(handResult.cells);
   handLabelText = handResult.name; handLabelKind = 'hand';
-  startMult = 2; curMult = 2; freeCount = 1;
+  startMult = 2; freeCount = 1;
   displayScore = 12000; spinWin = 12000;
-  featOrder = [0, 1, 2, 3]; featCursor = -1;
-  // SHOWING_WIN：箭頭都在，顏色依命中的卡別
+  handResult.cells.forEach(function (c) { board[c][0].locked = true; });
+  computeRound();
+  // 套用到最後一張 → 箭頭都亮了，顏色依命中的卡別
+  currentState = STATE.FEAT_APPLY; stateTimer = 8;
+  featCursor = featOrder.length - 1;
+}
+"""),
+    ("14_arrow_seq_a", """
+function SCENE() {
+  SETB([ID(2,2), ID(3,2), WILD_ID, ID(12,1), ID(12,3)]);
+  for (var c = 0; c < 5; c++) { colStopped[c] = true; }
+  features = [
+    { type: FEAT_IDX.mulScore, tier: 14, value: 2, triggered: true, flash: 0 },
+    { type: FEAT_IDX.mulMul,   tier: 15, value: 2, triggered: true, flash: 0 },
+  ];
+  handResult = classifyHand(boardIds());
+  winCells = new Set(handResult.cells);
+  handResult.cells.forEach(function (c) { board[c][0].locked = true; });
+  handLabelText = handResult.name; handLabelKind = 'hand';
+  computeRound();
+  startMult = 1; freeCount = 0; displayScore = 0; spinWin = 0;
+
   currentState = STATE.SHOWING_WIN; stateTimer = 5;
+  featCursor = -1;
+}
+"""),
+    ("15_arrow_seq_b", """
+function SCENE() {
+  SETB([ID(2,2), ID(3,2), WILD_ID, ID(12,1), ID(12,3)]);
+  for (var c = 0; c < 5; c++) { colStopped[c] = true; }
+  features = [
+    { type: FEAT_IDX.mulScore, tier: 14, value: 2, triggered: true, flash: 0 },
+    { type: FEAT_IDX.mulMul,   tier: 15, value: 2, triggered: true, flash: 0 },
+  ];
+  handResult = classifyHand(boardIds());
+  winCells = new Set(handResult.cells);
+  handResult.cells.forEach(function (c) { board[c][0].locked = true; });
+  handLabelText = handResult.name; handLabelKind = 'hand';
+  computeRound();
+  startMult = 1; freeCount = 0; displayScore = 0; spinWin = 0;
+
+  currentState = STATE.FEAT_APPLY; stateTimer = 8;
+  featCursor = 0;
+}
+"""),
+    ("16_arrow_seq_c", """
+function SCENE() {
+  SETB([ID(2,2), ID(3,2), WILD_ID, ID(12,1), ID(12,3)]);
+  for (var c = 0; c < 5; c++) { colStopped[c] = true; }
+  features = [
+    { type: FEAT_IDX.mulScore, tier: 14, value: 2, triggered: true, flash: 0 },
+    { type: FEAT_IDX.mulMul,   tier: 15, value: 2, triggered: true, flash: 0 },
+  ];
+  handResult = classifyHand(boardIds());
+  winCells = new Set(handResult.cells);
+  handResult.cells.forEach(function (c) { board[c][0].locked = true; });
+  handLabelText = handResult.name; handLabelKind = 'hand';
+  computeRound();
+  startMult = 1; freeCount = 0; displayScore = 0; spinWin = 0;
+
+  currentState = STATE.FEAT_APPLY; stateTimer = 8;
+  featCursor = featOrder.length - 1;
 }
 """),
 ]

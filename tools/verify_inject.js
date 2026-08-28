@@ -396,8 +396,10 @@ function run() {
   board[0][0] = newCell(ID(0, 1));    // 2♥ → 命中「點數2」與「♥」
   board[1][0] = newCell(ID(9, 0));    // J♠ → 命中「人頭」
   board[2][0] = newCell(ID(0, 3));    // 2♣ → 命中「點數2」
-  board[3][0] = newCell(ID(5, 2));    // 7♦ → 什麼都不命中
+  board[3][0] = newCell(ID(0, 2));    // 2♦ → 牌階對得上，但**不是得分牌** → 不該有箭頭
   board[4][0] = newCell(ID(11, 1));   // K♥ → 命中「♥」與「人頭」
+  // 功能卡只跟得分牌比對 [§美術 G11/G24/G25]，所以要先指定哪幾格是得分牌
+  handResult = { key: 'test', cells: [0, 1, 2, 4] };
   features = [
     { type: FEAT_IDX.addScore, tier: T_RANK2,  value: 1, triggered: false, flash: 0 },
     { type: FEAT_IDX.addMul,   tier: T_SUIT_H, value: 2, triggered: false, flash: 0 },
@@ -410,8 +412,16 @@ function run() {
     cardFeatHits[0].indexOf(1) >= 0 && cardFeatHits[4].indexOf(1) >= 0);
   T('命中「人頭」的卡 → 第 1、4 格',
     cardFeatHits[1].indexOf(2) >= 0 && cardFeatHits[4].indexOf(2) >= 0);
-  T('7♦ 什麼都不命中 → 不畫箭頭', !cardHasFeat(3), JSON.stringify(cardFeatHits[3]));
+  T('非得分牌即使牌階對上也不命中（2♦ 不在得分牌組裡）',
+    !cardHasFeat(3), JSON.stringify(cardFeatHits[3]));
   T('一張牌可同時命中多張卡', cardFeatHits[4].length === 2, cardFeatHits[4].length);
+  // 把第 3 格納入得分牌組，同一張 2♦ 就該被「點數2」的卡命中——證明差別真的來自「有沒有得分」
+  handResult = { key: 'test', cells: [0, 1, 2, 3, 4] };
+  computeCardFeatHits();
+  T('同一張 2♦ 一旦變成得分牌就命中了', cardFeatHits[3].indexOf(0) >= 0,
+    JSON.stringify(cardFeatHits[3]));
+  handResult = { key: 'test', cells: [0, 1, 2, 4] };
+  computeCardFeatHits();
 
   // 功能列的灰階與牌上的箭頭必須是同一份事實（否則會出現卡片說沒觸發、牌上卻有箭頭）
   T('featIsHit 與箭頭一致：點數2 的卡被命中', featIsHit(0) === true);
@@ -429,6 +439,14 @@ function run() {
   computeCardFeatHits();
   T('轉換WILD 卡不畫箭頭', !cardHasFeat(0) && !cardHasFeat(2));
 
+  // featTriggered 也只認得分牌（這條管的是「得分」，不只是箭頭）
+  var fRank2 = { type: FEAT_IDX.addScore, tier: T_RANK2, value: 1, triggered: false, flash: 0 };
+  handResult = { key: 'test', cells: [0] };          // 2♥ 得分
+  T('featTriggered：得分牌對上 → 觸發', featTriggered(fRank2) === true);
+  handResult = { key: 'test', cells: [1] };          // 只有 J♠ 得分，2♥/2♣/2♦ 都沒得分
+  T('featTriggered：只有非得分牌對上 → 不觸發', featTriggered(fRank2) === false);
+  handResult = { key: 'test', cells: [0, 1, 2, 4] };
+
   // 被轉成 WILD 的牌仍保留原牌階 → 箭頭照樣要指到它 [§一般遊戲 H81]
   features = [
     { type: FEAT_IDX.toWild,   tier: T_RANK2, value: 0, triggered: false, flash: 0 },
@@ -436,6 +454,7 @@ function run() {
   ];
   applyWildConvert();
   T('轉換WILD 真的把牌變 WILD 了', board[0][0].id === WILD_ID);
+  handResult = { key: 'test', cells: [0, 1, 2, 4] };
   computeCardFeatHits();
   T('轉成 WILD 的牌仍被加得分卡命中（雙重身分）',
     cardFeatHits[0].indexOf(1) >= 0, JSON.stringify(cardFeatHits[0]));
@@ -660,17 +679,18 @@ function run() {
     { type: FEAT_IDX.addScore, tier: 0, value: 10, triggered: true, flash: 0 },
     { type: FEAT_IDX.addMul,   tier: 0, value: 5,  triggered: true, flash: 0 },
   ];
-  featOrder = []; featCursor = -1;
+  // 顏色只算「已輪到」的卡，所以先把兩張都推進 featOrder 並套完
+  featOrder = [0, 1]; featCursor = 1;
   cardFeatHits = [[0], [1], [0, 1], [], []];
   T('10e 命中得分卡 → 金箭頭', cardFeatCat(0) === 'score' && catPaint('score') === CAT_COLOR.score);
   T('10e 命中倍數卡 → 紫箭頭', cardFeatCat(1) === 'mult' && catPaint('mult') === CAT_COLOR.mult);
   T('10e 同時命中兩類 → mix', cardFeatCat(2) === 'mix');
   T('10e 沒命中就沒有類別', cardFeatCat(3) === null);
-  featOrder = [0, 1]; featCursor = 0; currentState = STATE.FEAT_APPLY;
+  featCursor = 0; currentState = STATE.FEAT_APPLY;
   T('10e 正在套用得分卡時，該牌箭頭轉金', cardFeatCat(2) === 'score', cardFeatCat(2));
   featCursor = 1;
   T('10e 正在套用倍數卡時，該牌箭頭轉紫', cardFeatCat(2) === 'mult', cardFeatCat(2));
-  featCursor = -1; currentState = STATE.IDLE;
+  featCursor = 1; currentState = STATE.IDLE;
   var mixPaint = catPaint('mix', 0, 0, 10, 10);
   T('10e mix 回傳漸層物件（不是字串）', typeof mixPaint === 'object' && !!mixPaint.addColorStop);
   T('10e catGlow 三類都有值', !!catGlow('score') && !!catGlow('mult') && !!catGlow('mix'));
@@ -765,6 +785,91 @@ function run() {
   T('10e 測試統計面板預設關閉', showStatsPanel === false, String(showStatsPanel));
   T('10e 側邊鈕初始沒有 active',
     document.getElementById('statsBtn').classList.contains('active') === false);
+  reset();
+
+  /* ===== 10f. 箭頭：只給得分牌 + 依功能卡由左至右依序亮起（2026-08-28）===== */
+  NOTE('10f. 箭頭只給得分牌、依序亮起');
+  reset();
+
+  // --- 依序揭示：featCursor 前進到哪，箭頭就亮到哪 ---
+  features = [
+    { type: FEAT_IDX.addScore, tier: 0, value: 1, triggered: true, flash: 0 },   // 命中第 0 格
+    { type: FEAT_IDX.addMul,   tier: 0, value: 2, triggered: true, flash: 0 },   // 命中第 2 格
+    { type: FEAT_IDX.mulMul,   tier: 0, value: 2, triggered: true, flash: 0 },   // 命中第 4 格
+  ];
+  cardFeatHits = [[0], [], [1], [], [2]];
+  featOrder = [0, 1, 2];
+  featCursor = -1;
+  T('10f 還沒開始套用（SHOWING_WIN）→ 一支箭頭都沒有',
+    !cardFeatRevealed(0) && !cardFeatRevealed(2) && !cardFeatRevealed(4));
+  featCursor = 0;
+  T('10f 套到第 1 張 → 只有它命中的牌有箭頭',
+    cardFeatRevealed(0) && !cardFeatRevealed(2) && !cardFeatRevealed(4));
+  featCursor = 1;
+  T('10f 套到第 2 張 → 前一支保持亮著，第二支跟著亮',
+    cardFeatRevealed(0) && cardFeatRevealed(2) && !cardFeatRevealed(4));
+  featCursor = 2;
+  T('10f 套完三張 → 三支都亮',
+    cardFeatRevealed(0) && cardFeatRevealed(2) && cardFeatRevealed(4));
+  T('10f 沒命中任何卡的牌永遠沒箭頭', !cardFeatRevealed(1) && !cardFeatRevealed(3));
+  featCursor = 3;   // finishFeatures 之後 featCursor 會等於 featOrder.length
+  T('10f 套完之後（featCursor 已越界）箭頭仍保持亮著',
+    cardFeatRevealed(0) && cardFeatRevealed(2) && cardFeatRevealed(4));
+  featOrder = []; featCursor = -1;
+  T('10f 沒有任何功能卡時不會亮箭頭', !cardFeatRevealed(0));
+  reset();
+
+  // --- 端對端：真的走 startSpin/update，箭頭數只增不減，且只出現在得分牌上 ---
+  reset(); ODDS.wToWild = 0; ODDS.maxRound = 1; forceSpinType = 'pair';
+  startSpin();
+  var arrowSeq = [], badCell = -1, sawApply = false, n6 = 0, prevCount = 0, decreased = false;
+  while (n6 < 200000) {
+    update(); n6++;
+    if (showFeatArrows() && winCells) {
+      var cnt = 0;
+      for (var c6 = 0; c6 < COLS; c6++) {
+        if (cardFeatRevealed(c6)) {
+          cnt++;
+          if (!winCells.has(c6)) badCell = c6;          // 箭頭出現在非得分牌上 = 錯
+        }
+      }
+      if (currentState === STATE.FEAT_APPLY) {
+        sawApply = true;
+        if (arrowSeq.length === 0 || arrowSeq[arrowSeq.length - 1] !== cnt) arrowSeq.push(cnt);
+      }
+      if (cnt < prevCount && currentState !== STATE.IDLE) decreased = true;
+      prevCount = cnt;
+    } else { prevCount = 0; }
+    if (currentState === STATE.IDLE && !inFG) break;
+  }
+  T('10f 端對端：箭頭只出現在得分牌上', badCell < 0, 'badCell=' + badCell);
+  T('10f 端對端：套用期間箭頭數只增不減', !decreased, arrowSeq.join('>'));
+  T('10f 端對端：有走到 FEAT_APPLY', sawApply || arrowSeq.length === 0);
+  reset();
+
+  // --- 端對端：非得分牌不會讓功能卡生效（這條管得分，不只箭頭）---
+  // 強開一對 + 只發「乘倍數」卡，統計「有卡觸發卻沒有任何得分牌對得上」的次數
+  var mismatch = 0;
+  for (var r6 = 0; r6 < 120; r6++) {
+    reset(); ODDS.wToWild = 0; ODDS.maxRound = 1; forceSpinType = 'pair';
+    startSpin();
+    var g6 = 0;
+    while (g6 < 200000) {
+      update(); g6++;
+      if (currentState === STATE.FEAT_APPLY || currentState === STATE.PRE_HOLD) {
+        for (var fi = 0; fi < featOrder.length; fi++) {
+          var okCell = false;
+          for (var c7 = 0; c7 < COLS; c7++) {
+            if (cardFeatHits[c7] && cardFeatHits[c7].indexOf(featOrder[fi]) >= 0) okCell = true;
+          }
+          if (!okCell) mismatch++;
+        }
+        break;
+      }
+      if (currentState === STATE.IDLE && !inFG) break;
+    }
+  }
+  T('10f 端對端：每張被套用的功能卡都至少對上一張得分牌', mismatch === 0, 'mismatch=' + mismatch);
   reset();
 
   /* ===== 10c. 版面幾何（把只有肉眼看得到的重疊問題釘住）===== */

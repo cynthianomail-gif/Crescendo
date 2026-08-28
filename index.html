@@ -243,7 +243,7 @@ canvas { display: block; width: 100%; height: 100%; }
  * 面板本身（區塊 7）原則上不用動。
  * ========================================================== */
 
-const APP_BUILD = 'crescendo-5';   // 驗證用識別值：測到的是不是最新版，看這個
+const APP_BUILD = 'crescendo-6';   // 驗證用識別值：測到的是不是最新版，看這個
 const GAME_NAME = 'Crescendo';
 
 const canvas = document.getElementById('gameCanvas');
@@ -1091,9 +1091,12 @@ function tierMatches(tier, id) {
   if (tier.kind === 'suit') return suitOf(id) === tier.v;
   return isFace(id);                                     // 人頭牌＝J/Q/K
 }
+// 同上：只有得分牌能觸發功能卡 [§美術 G11/G24/G25]，未匹配就走【功能無效演繹】[H25]
 function featTriggered(f) {
   const tier = TIERS[f.tier];
-  for (let c = 0; c < COLS; c++) if (tierMatches(tier, tierIdAt(c))) return true;
+  for (let c = 0; c < COLS; c++) {
+    if (isScoringCell(c) && tierMatches(tier, tierIdAt(c))) return true;
+  }
   return false;
 }
 function featLabel(f) {
@@ -1128,6 +1131,17 @@ function applyWildConvert() {
 
 /* ---------- 得分牌抬起（出牌感）與功能卡命中箭頭 ---------- */
 // 哪張牌命中了哪幾張功能卡。牌階比對走 tierIdAt()，所以「轉換成 WILD 的牌」也算命中原牌階。
+/* 功能卡只跟「得分牌」比對，不是整個盤面。
+ * ⚠️ 企劃兩處矛盾：
+ *   `[§一般遊戲 E68]`「當**盤面**出現對應牌階時即可觸發效果」
+ *   `[§美術 G11]`「**得分圖示**與功能牌卡匹配時」／`[G24]`「花色與當前**得分圖示**匹配到時」
+ *   ／`[G25]`【功能無效演繹】「花色**無法與當前的得分圖示**進行匹配時」
+ * 美術需求說明三處都寫「得分圖示」，且使用者 2026-08-28 明確指示照這個走，
+ * 所以採「只有得分牌會觸發功能卡」。這同時影響得分計算，不只是箭頭。
+ * 被【轉換 WILD】變成 WILD 的牌仍用原牌牌階比對 [§一般遊戲 H81]（見 tierIdAt）。 */
+function isScoringCell(c) {
+  return !!(handResult && handResult.cells.indexOf(c) >= 0);
+}
 function computeCardFeatHits() {
   cardFeatHits = [];
   for (let c = 0; c < COLS; c++) cardFeatHits[c] = [];
@@ -1135,11 +1149,24 @@ function computeCardFeatHits() {
     if (FEAT_TYPES[f.type].key === 'toWild') return;   // 轉換WILD 另有向下光子演繹，不畫箭頭
     const tier = TIERS[f.tier];
     for (let c = 0; c < COLS; c++) {
+      if (!isScoringCell(c)) continue;                 // [§美術 G11/G24/G25]
       if (tierMatches(tier, tierIdAt(c))) cardFeatHits[c].push(i);
     }
   });
 }
 function cardHasFeat(c) { return !!(cardFeatHits[c] && cardFeatHits[c].length); }
+/* 功能卡「由左至右依序套用」[§一般遊戲 D53]，所以得分牌上的箭頭也要**依序**亮起：
+ * 某張功能卡輪到它套用時，它命中的那些得分牌才長出箭頭，之後保持亮著。
+ * featCursor = -1（SHOWING_WIN，還沒開始套用）→ 一支箭頭都沒有。 */
+function cardFeatRevealed(c) {
+  const hits = cardFeatHits[c];
+  if (!hits || !hits.length) return false;
+  for (let k = 0; k < hits.length; k++) {
+    const pos = featOrder.indexOf(hits[k]);
+    if (pos >= 0 && pos <= featCursor) return true;
+  }
+  return false;
+}
 /* 這張牌命中的功能卡屬於哪一類 → 決定命中框與雙箭頭的顏色。
  * [§美術需求說明 H11]：「光流依據搭配到的功能牌卡去做改變(藍/橘)」、
  * 「向上的雙箭頭光效(顏色需與流光一致)」。使用者 2026-08-27 改色後＝紫(倍數)／金(得分)。
@@ -1150,6 +1177,8 @@ function cardFeatCat(c) {
   if (cardFeatActive(c)) return FEAT_TYPES[features[featOrder[featCursor]].type].cat;
   let hasScore = false, hasMult = false;
   hits.forEach(i => {
+    const pos = featOrder.indexOf(i);
+    if (pos < 0 || pos > featCursor) return;           // 還沒輪到的卡不算進顏色
     const cat = FEAT_TYPES[features[i].type].cat;
     if (cat === 'score') hasScore = true;
     else if (cat === 'mult') hasMult = true;
@@ -2078,7 +2107,8 @@ function drawBoard() {
       ctx.restore();
     }
     // 命中功能卡的牌：外框顏色跟著功能卡類別走（得分＝金／倍數＝紫）[§美術 H11]
-    if (arrows && cardHasFeat(c)) {
+    // 只有「已輪到的功能卡所命中的得分牌」才有框，跟箭頭同步 [§一般遊戲 D53]
+    if (arrows && cardFeatRevealed(c)) {
       const act = cardFeatActive(c);
       const hitCat = cardFeatCat(c);
       ctx.save();
@@ -2119,7 +2149,7 @@ function drawBoard() {
   // --- 第三段：功能卡命中箭頭。要保持垂直（不隨牌傾斜），所以獨立一輪畫 ---
   if (arrows) {
     for (let c = 0; c < COLS; c++) {
-      if (!colStopped[c] || !cardHasFeat(c)) continue;
+      if (!colStopped[c] || !cardFeatRevealed(c)) continue;
       const e = liftEase(board[c][0].lift);
       drawFeatArrow(c, GRID_Y + 4 - FX.cardLiftY * e, cardFeatActive(c), now);
     }
