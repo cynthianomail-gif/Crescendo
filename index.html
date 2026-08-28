@@ -248,7 +248,7 @@ canvas { display: block; width: 100%; height: 100%; }
  * 面板本身（區塊 7）原則上不用動。
  * ========================================================== */
 
-const APP_BUILD = 'crescendo-9';   // 驗證用識別值：測到的是不是最新版，看這個
+const APP_BUILD = 'crescendo-10';   // 驗證用識別值：測到的是不是最新版，看這個
 const GAME_NAME = 'Crescendo';
 
 const canvas = document.getElementById('gameCanvas');
@@ -473,7 +473,7 @@ const RHYTHM_MAP = [
   ['postHold1',        '跑分前停頓a6',        '1階：得分相乘演繹後，到得分數字跑分前的停頓',        '得分顯示間隔'],
   ['postHold2',        '跑分前停頓a7',        '2階（25倍以上）',                                    '得分顯示間隔'],
   ['postHold3',        '跑分前停頓a8',        '3階（101倍以上）',                                   '得分顯示間隔'],
-  ['scoreAppear',      '得分數字演繹',        '得分數字跑分的持續時間',                             '得分演繹'],
+  ['scoreAppear',      '得分數字演繹',        '盤面中央得分數字的跑分持續時間（不跑分的級距同樣佔這段）', '得分演繹'],
   ['scoreHold',        '得分數字停留',        '跑分結束後分數停留的持續時間',                       '公版分數'],
   ['slamRestore',      '復原演繹',            '得分欄與倍數欄往左右回到原位的持續時間',             null],
   ['symbolFx',         '轉換WILD演繹',        '轉換 WILD 功能卡的光子傳遞演繹持續時間',             '圖示演繹'],
@@ -1009,7 +1009,7 @@ let scoredKeys = null;         // 本局已計分的具體牌組 [§一般遊戲
 let roundIdx = 0;
 let drawInfo = null, drawRespinUsed = 0;
 
-let spinWin = 0, fgWin = 0, totalScore = 0, displayScore = 0, scoreFrom = 0;
+let spinWin = 0, fgWin = 0, totalScore = 0, displayScore = 0;
 let bigWinLabel = '';
 let handLabelText = '', handLabelKind = '';
 let wildBeams = [];
@@ -1449,6 +1449,29 @@ function fmtScore(v) {
 }
 function isHighScore(v) { return v / Math.max(1, ODDS.bet) > FX.highScoreRatio; }
 
+/* ---------- 中央得分數字的「跑分」規則（使用者 2026-08-28 指定）----------
+ * 兩家平台慣例不同，節奏面板可切換：
+ *   星城：得分 ÷ 押注 未達 10 倍就不跑分（＝節奏表得分級距第一段「得分＜10倍以下」
+ *         本來就沒有「加總跑分」那段，見 RHYTHM_TIERS）
+ *   H5  ：除了大獎（≥ FX.bigWinRatio，預設 25 倍）以外都不跑分
+ * 不跑分＝盤面中央的數字直接顯示最終得分（不做數字滾動），時間軸長度不變。
+ * 最終分數的唯一出口是下方公版的 WIN，它一律跑分。 */
+const CENTER_RUN_XC_RATIO = 10;             // 星城門檻，對齊 RHYTHM_TIERS[0] 的上界
+// [key, 完整名稱（匯出的節奏表註記用）, 判定, 面板按鈕短標（面板窄，長字會折行）]
+const CENTER_RUN_MODES = [
+  ['xc', '星城（10倍以下不跑分）', r => r >= CENTER_RUN_XC_RATIO, '星城（<10倍不跑）'],
+  ['h5', 'H5（除大獎外不跑分）',   r => r >= FX.bigWinRatio,      'H5（僅大獎跑）'],
+];
+let CENTER_RUN_MODE = 'xc';
+function centerRunMode() {
+  return CENTER_RUN_MODES.find(m => m[0] === CENTER_RUN_MODE) || CENTER_RUN_MODES[0];
+}
+// winValue＝本回合贏分（得分×倍數）。大獎在本 demo 是局末用 spinWin 判的，
+// 中央數字是每回合各自演一次，所以這裡用 roundWin 的倍數判定。
+function centerRunEnabled(winValue) {
+  return centerRunMode()[2](winValue / Math.max(1, ODDS.bet));
+}
+
 /* ---------- 強開盤面 ---------- */
 function mkId(r, s) { return r * 4 + s; }
 function rndR() { return Math.floor(Math.random() * 13); }
@@ -1661,7 +1684,6 @@ function finishFeatures() {
   winTier = tierOf(roundWin);
   spinWin += roundWin;
   totalScore += roundWin;
-  scoreFrom = displayScore;
   // 鏡頭拉近在「得分相乘_演繹前停留」時發生 [§高倍得分層級設計 J4]；
   // 震動則等到兩欄真的相撞那一瞬間才給 [§美術需求說明 H47]，所以不在這裡設 shakeAmp。
   zoomAmp = ZOOM_TIERS[winTier] || 1;
@@ -1680,7 +1702,9 @@ function onSlamHit() {
   shakeAmp = SHAKE_TIERS[winTier] || 0;
   slamRings.push({ t: 0, life: Math.max(6, Math.round(F_MULTSLAM * 0.7)) });
   if (showScorePopup) {
-    slamResult = { t: 0, score: roundWin, base: Math.round(scoreNow()), mult: curMult };
+    // run＝這一回合的中央數字要不要跑分（規則見 CENTER_RUN_MODES，節奏面板可切換）
+    slamResult = { t: 0, score: roundWin, base: Math.round(scoreNow()), mult: curMult,
+                   run: centerRunEnabled(roundWin) };
   }
 }
 // 相乘結果牌要活到「復原演繹」為止；跨 MULT_SLAM→POST_HOLD→SCORE_RUN→SCORE_HOLD 都在
@@ -1689,6 +1713,8 @@ function slamResultAlive() {
       || currentState === STATE.SCORE_RUN || currentState === STATE.SCORE_HOLD;
 }
 function afterScore() {
+  // 這一回合演完了 → 下方公版的累積分數直接切換到新的累計值（不跑分）[使用者 2026-08-28]
+  displayScore = spinWin;
   // 5 張全中 → 起始倍數加倍 [§一般遊戲 E47]
   const n = handResult ? handResult.cells.length : 0;
   if (n >= COLS) { currentState = STATE.MULT_BOOST; stateTimer = 0; return; }
@@ -1709,6 +1735,7 @@ function doRespin() {
     for (let c = 0; c < COLS; c++) cols.push(!keep.has(c));      // 鎖定得分牌 [§一般遊戲 E44]
   }
   winCells = null;
+  payUnits = 0;                                                  // 得分欄歸零（新回合還沒有得分）
   clearLift();                                                   // 抬起的牌落回盤面
   handLabelText = 'AGAIN';                                       // [§美術 F63]
   handLabelKind = 'again';
@@ -1764,6 +1791,7 @@ function startSpin() {
   const buy = forceSpinType;
   forceActive = buy;
   spinWin = 0; displayScore = 0; roundIdx = 0;
+  payUnits = 0;                             // 得分欄歸零（新的一局還沒有得分）
   scoredKeys = new Set();
   hasHitThisSpin = false;
   handResult = null; winCells = null; drawInfo = null;
@@ -1954,15 +1982,12 @@ function update() {
       }
       break;
 
+    // 得分數字演繹：這段只驅動盤面中央的數字（跑不跑分見 CENTER_RUN_MODES）。
+    // 下方公版的累積分數不跑分，等這一回合演完才直接切換 [使用者 2026-08-28]。
     case STATE.SCORE_RUN:
       stateTimer++;
       slamK = 1;
-      {
-        const k = Math.min(1, stateTimer / Math.max(1, F_SCOREAPPEAR));
-        displayScore = scoreFrom + (spinWin - scoreFrom) * k;
-      }
       if (stateTimer >= F_SCOREAPPEAR) {
-        displayScore = spinWin;
         currentState = STATE.SCORE_HOLD; stateTimer = 0;
       }
       break;
@@ -2465,6 +2490,21 @@ function drawSlamRings(cx, cy) {
 
 /* 相乘結果落在盤面中央（使用者 2026-08-27 指定；企劃 H47 只寫到「碰撞」為止）
  * 上排小字＝得分 × 倍數，下排大字＝最終得分。 */
+/* 中央大字要顯示的數字。跑分＝從相乘前的得分數到最終得分，時長＝【得分數字演繹 scoreAppear】；
+ * 不跑分的級距（星城 <10 倍／H5 非大獎）直接顯示最終得分 [使用者 2026-08-28]。
+ * 抽成函式讓驗證腳本走真正的判定路徑。 */
+function slamResultValue() {
+  if (!slamResult) return 0;
+  if (!slamResult.run) return slamResult.score;
+  if (currentState === STATE.SCORE_RUN) {
+    const rk = Math.min(1, stateTimer / Math.max(1, F_SCOREAPPEAR));
+    return slamResult.base + (slamResult.score - slamResult.base) * rk;
+  }
+  // 還沒開始跑（碰撞中／跑分前停留）先停在相乘前的得分；跑完（SCORE_HOLD）顯示最終得分
+  if (currentState === STATE.MULT_SLAM || currentState === STATE.POST_HOLD) return slamResult.base;
+  return slamResult.score;
+}
+
 function drawSlamResult() {
   if (!slamResult || !slamResultAlive()) return;
   const cx = GRID_X + GRID_W / 2, cy = GRID_Y + GRID_H / 2;
@@ -2473,7 +2513,7 @@ function drawSlamResult() {
   const k = Math.min(1, t / pop);
   const peak = Math.max(1, FX.slamResultPop);
   const scale = k < 1 ? (0.3 + (peak - 0.3) * k) : peak - (peak - 1) * Math.min(1, (t - pop) / 10);
-  const big = fmtScore(slamResult.score);
+  const big = fmtScore(slamResultValue());
   const small = fmtScore(slamResult.base) + '  ×' + slamResult.mult;
   const smallSize = Math.max(11, Math.round(FX.slamResultSize * 0.32));
   ctx.save();
@@ -2520,24 +2560,30 @@ function slamShift() {
   return { sdx: dxS * k, mdx: dxM * k, gapCx: gapCx, k: k };
 }
 
+// 只有「套用功能卡→結算」這幾個階段才顯示加成後的 curMult；
+// 其餘（待機／轉動／預報／重轉）顯示本局目前的起始倍數。
+function inSettleNow() {
+  return currentState === STATE.FEAT_APPLY || currentState === STATE.PRE_HOLD
+    || currentState === STATE.MULT_SLAM || currentState === STATE.SCORE_RUN
+    || currentState === STATE.POST_HOLD || currentState === STATE.SCORE_HOLD;
+}
+/* 左上「得分」欄要顯示的數字 [使用者 2026-08-28 拍板]：
+ *   只有「這一回合的賠率贏分 ＋ 功能卡加上去的贏分」（＝scoreNow()，含加得分／乘得分卡，
+ *   不含倍數）。這一欄**不做任何跑分，也不會出現相乘後的分數**——相乘結果只出現在盤面中央，
+ *   累計分數只出現在下方公版。滾動中沒有回合結果（payUnits = 0）就顯示 0。
+ * 抽成函式是為了讓驗證腳本走真正的判定路徑，不要複製一份邏輯。 */
+function scoreBoxValue() {
+  return Math.round(scoreNow());
+}
+
 // 左上黃框＝得分；右上藍框＝起始倍數 [§一般遊戲 D30/D31]
 function drawScoreBoxes() {
   const sb = LAYOUT.scoreBox, mb = LAYOUT.multBox;
   const sh = slamShift();
   const sx = sb.x + sh.sdx, mx = mb.x + sh.mdx;
 
-  // 只有「套用功能卡→結算」這幾個階段才顯示加成後的 curMult；
-  // 其餘（待機／轉動／預報／重轉）顯示本局目前的起始倍數。
-  const inSettle = currentState === STATE.FEAT_APPLY || currentState === STATE.PRE_HOLD
-    || currentState === STATE.MULT_SLAM || currentState === STATE.SCORE_RUN
-    || currentState === STATE.POST_HOLD || currentState === STATE.SCORE_HOLD;
-  // 相乘演繹期間，得分欄顯示的是「本回合得分」（要跟倍數欄相乘的那個數），
-  // 相撞之後換成相乘結果；其餘時候照舊顯示本局累計 [§美術 H48：復原時得分歸零]
-  let showScore;
-  if (currentState === STATE.IDLE && spinWin === 0) showScore = 0;
-  else if (inSettle && currentState !== STATE.SCORE_RUN && currentState !== STATE.SCORE_HOLD) {
-    showScore = slamHit ? roundWin : Math.round(scoreNow());
-  } else showScore = displayScore;
+  const inSettle = inSettleNow();
+  const showScore = scoreBoxValue();
   const hi = isHighScore(showScore);
 
   // 銜接用的成倍符號 [§美術 E44 圖三]：碰撞時被兩個欄位蓋過 [H47]
@@ -3038,7 +3084,7 @@ document.getElementById('infoTitle').textContent = GAME_NAME;
  * 區塊 7：調校面板（換遊戲原則上不用動）
  * ========================================================== */
 const TUNE_KEY = 'crescendo_tuning';
-const TUNE_VERSION = 7;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
+const TUNE_VERSION = 8;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
 let tunePanelOpen = false, tuneTab = 'timing';
 let layoutSelected = null, layoutDrag = null;
 let layoutFieldRefs = {}, layoutRangeRefs = {};
@@ -3061,7 +3107,7 @@ function saveTuning() {
   try {
     localStorage.setItem(TUNE_KEY, JSON.stringify({
       version: TUNE_VERSION, timing: TIMING_AUTO, timingTurbo: TIMING_TURBO,
-      speedMode: SPEED_MODE, timeline: TIMING_START,
+      speedMode: SPEED_MODE, centerRun: CENTER_RUN_MODE, timeline: TIMING_START,
       layout: LAYOUT, fx: FX, odds: ODDS, choice: CHOICE,
     }));
     return true;
@@ -3084,6 +3130,7 @@ function loadTuning() {
       TIMING_AUTO  = Object.assign({}, DEFAULT_TIMING);
       TIMING_TURBO = Object.assign({}, DEFAULT_TIMING_TURBO);
       setSpeedMode('auto');
+      CENTER_RUN_MODE = 'xc';
       TIMING_START = Object.assign({}, DEFAULT_TIMING_START);
       LAYOUT       = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
       FX           = Object.assign({}, DEFAULT_FX);
@@ -3094,6 +3141,7 @@ function loadTuning() {
       clampInto(TIMING_AUTO,  DEFAULT_TIMING,       d.timing,      TIMING_RANGE, [0, 5]);
       clampInto(TIMING_TURBO, DEFAULT_TIMING_TURBO, d.timingTurbo, TIMING_RANGE, [0, 5]);
       setSpeedMode(d.speedMode);
+      if (CENTER_RUN_MODES.some(m => m[0] === d.centerRun)) CENTER_RUN_MODE = d.centerRun;
       clampInto(FX,     DEFAULT_FX,     d.fx,     FX_RANGE,     [0, 100]);
       clampInto(ODDS,   DEFAULT_ODDS,   d.odds,   ODDS_RANGE,   [0, 1000]);
       if (d.timeline) for (const k in DEFAULT_TIMING_START) {
@@ -3277,6 +3325,37 @@ function buildTimingTab() {
     sw.appendChild(b);
   });
   tuneBody.appendChild(sw);
+
+  // 中央得分數字的跑分規則（星城／H5 慣例不同）[使用者 2026-08-28]
+  const cr = document.createElement('div');
+  cr.className = 'tune-hint';
+  cr.style.display = 'flex'; cr.style.alignItems = 'center'; cr.style.gap = '8px';
+  cr.style.flexWrap = 'wrap';
+  const crLab = document.createElement('span');
+  crLab.textContent = '中央跑分：';
+  cr.appendChild(crLab);
+  CENTER_RUN_MODES.forEach(m => {
+    const b = document.createElement('button');
+    b.textContent = m[3];
+    b.style.cssText = 'padding:3px 10px;border-radius:6px;cursor:pointer;font-size:12px;border:1px solid '
+      + (CENTER_RUN_MODE === m[0] ? '#facc15' : 'rgba(148,163,184,.5)')
+      + ';background:' + (CENTER_RUN_MODE === m[0] ? 'rgba(250,204,21,.18)' : 'transparent')
+      + ';color:' + (CENTER_RUN_MODE === m[0] ? '#fde68a' : '#cbd5e1');
+    b.addEventListener('click', () => {
+      if (CENTER_RUN_MODE === m[0]) return;
+      CENTER_RUN_MODE = m[0]; saveTuning(); buildTimingTab();
+      setTuneStatus('中央跑分規則：' + m[1] + '，下一次得分演繹起生效', 'ok');
+    });
+    cr.appendChild(b);
+  });
+  const crNote = document.createElement('div');
+  crNote.style.cssText = 'flex:1 0 100%;color:#94a3b8;font-size:11px;';
+  crNote.textContent = '不跑分＝盤面中央的數字直接顯示最終得分（時間軸長度不變）。'
+    + '左上「得分」欄只顯示本回合的賠率贏分＋功能卡加成（不含倍數、不跑分）；'
+    + '下方公版是連爆累積分數，也不跑分，回合演完直接切換。';
+  cr.appendChild(crNote);
+  tuneBody.appendChild(cr);
+
   const hint = document.createElement('div');
   hint.className = 'tune-hint';
   hint.textContent = '甘特圖：滑鼠在色條中間（手掌游標）拖曳＝移動起點；'
@@ -3444,6 +3523,7 @@ document.getElementById('tuneReset').addEventListener('click', () => {
   TIMING_AUTO  = Object.assign({}, DEFAULT_TIMING);
   TIMING_TURBO = Object.assign({}, DEFAULT_TIMING_TURBO);
   setSpeedMode(SPEED_MODE);       // 重新指向重建後的那一份
+  CENTER_RUN_MODE = 'xc';
   TIMING_START = Object.assign({}, DEFAULT_TIMING_START);
   LAYOUT = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
   FX = Object.assign({}, DEFAULT_FX);
@@ -3462,6 +3542,7 @@ function showExportFallback(text) {
 document.getElementById('tuneExport').addEventListener('click', () => {
   const text = JSON.stringify({
     game: GAME_NAME, build: APP_BUILD, version: TUNE_VERSION,
+    center_score_run: CENTER_RUN_MODE,
     timing_seconds: TIMING, timeline_start_seconds: TIMING_START,
     layout_px: LAYOUT, fx: FX, odds: ODDS, choice: CHOICE,
   }, null, 2);
@@ -3850,12 +3931,13 @@ function rhythmTimeline(T, kind, tier) {
     // 跑分 → 停留 → 復原演繹 [§節奏表 D8/D9]＋[§美術 H48]
     segs.push({ t0: t, dur: T.scoreAppear,
       text: '得分數字跑分(' + R1(T.scoreAppear) + 's)', fill: 'score' });
-    marks.push({ t: t, text: '公版分數同步跑分' });
+    marks.push({ t: t, text: '中央得分數字跑分' });
     t += T.scoreAppear;
     segs.push({ t0: t, dur: T.scoreHold, text: '停留(' + R1(T.scoreHold) + 's)', fill: 'scoreHold' });
     t += T.scoreHold;
     segs.push({ t0: t, dur: T.slamRestore, text: '復原演繹(' + R1(T.slamRestore) + 's)', fill: 'score' });
     t += T.slamRestore;
+    marks.push({ t: t, text: '公版累積分數切換' });     // 不跑分，回合結束直接切換
 
     // 多回合情境的第一回合用「5 張全中 → 起始倍數加倍」當觸發重轉的理由 [§一般遊戲 E47]
     if (kind === 'multi' && g === 0) {
@@ -3875,6 +3957,15 @@ function rhythmTimeline(T, kind, tier) {
       skips.push(t);
       t += respin;
     }
+  }
+
+  // 中央得分數字的跑分規則（星城／H5 慣例不同，節奏面板可切換）[使用者 2026-08-28]
+  {
+    const crm = centerRunMode();
+    const crRun = tier ? crm[2](tier[0]) : false;
+    notes.push('中央得分數字：' + crm[1] + '，本級距→' + (crRun ? '跑分' : '不跑分（直接顯示最終得分）')
+      + '。左上得分欄只顯示本回合的賠率贏分＋功能卡加成（不含倍數、不跑分）；'
+      + '下方公版是連爆的累積分數，也不跑分，回合演完直接切換。');
   }
 
   if (tier && tier[0] >= 50) {                        // 50 倍起有大獎報獎 [§美術 B76:D81]

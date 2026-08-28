@@ -342,9 +342,13 @@ function run() {
   T('儲存往返：layout', LAYOUT.grid.x === 300, LAYOUT.grid.x);
   T('儲存往返：fx', FX.shake2 === 9, FX.shake2);
   T('儲存往返後 GRID_X 同步', GRID_X === 300, GRID_X);
+  CENTER_RUN_MODE = 'h5'; saveTuning();
+  CENTER_RUN_MODE = 'xc'; loadTuning();
+  T('儲存往返：中央跑分規則', CENTER_RUN_MODE === 'h5', CENTER_RUN_MODE);
   localStorage.setItem(TUNE_KEY, JSON.stringify({ version: TUNE_VERSION - 1, odds: { bet: 777 } }));
   loadTuning();
   T('舊版本保存值自動作廢', ODDS.bet === DEFAULT_ODDS.bet, ODDS.bet);
+  T('舊版本保存值作廢後中央跑分規則回預設（星城）', CENTER_RUN_MODE === 'xc', CENTER_RUN_MODE);
   localStorage.setItem(TUNE_KEY, '{ this is not json');
   var loadErr = null;
   try { loadTuning(); } catch (e) { loadErr = e.message; }
@@ -387,7 +391,7 @@ function run() {
   /* ===== 10b. 得分牌抬起（出牌感）與功能卡命中箭頭 ===== */
   NOTE('10b. 抬起與箭頭');
   reset();
-  T('TUNE_VERSION 已升版（DEFAULT 結構有變）', TUNE_VERSION === 7, TUNE_VERSION);
+  T('TUNE_VERSION 已升版（DEFAULT 結構有變）', TUNE_VERSION === 8, TUNE_VERSION);
 
   // --- 哪張牌命中哪張功能卡 ---
   var T_RANK2 = 0, T_SUIT_H = 14, T_FACE = 17;   // TIERS: 0~12 點數 / 13~16 ♠♥♦♣ / 17 人頭
@@ -652,6 +656,113 @@ function run() {
     if (currentState === STATE.IDLE && !inFG) break;
   }
   T('10d MULT_SLAM / SCORE_HOLD 可以被跳過', sawSlam && skOk);
+  reset();
+
+  /* ===== 10i. 三個分數欄各自的規則（使用者 2026-08-28 拍板）=====
+     左上「得分」欄：只有這一回合的賠率贏分＋功能卡加成（不含倍數），不跑分、不出現相乘結果。
+     下方公版：連爆的累積分數，也不跑分，回合演完直接切換。
+     盤面中央：依平台慣例跑分——星城 <10 倍不跑、H5 除大獎（BIG WIN 起）外不跑。 */
+  NOTE('10i. 三個分數欄的規則');
+  reset();
+
+  // --- 規則本身（純函式，門檻用字面值寫死，不是照抄程式的算式）---
+  var keepMode = CENTER_RUN_MODE;
+  var B = ODDS.bet;
+  CENTER_RUN_MODE = 'xc';
+  T('10i 星城：9.9 倍不跑分', centerRunEnabled(9.9 * B) === false);
+  T('10i 星城：10 倍跑分',    centerRunEnabled(10 * B) === true);
+  T('10i 星城：24 倍跑分（未達大獎也跑）', centerRunEnabled(24 * B) === true);
+  CENTER_RUN_MODE = 'h5';
+  T('10i H5：10 倍不跑分（與星城相反）', centerRunEnabled(10 * B) === false);
+  T('10i H5：24 倍不跑分（大獎門檻 ' + FX.bigWinRatio + ' 倍以下）', centerRunEnabled(24 * B) === false);
+  T('10i H5：25 倍（大獎）跑分', centerRunEnabled(25 * B) === true);
+  CENTER_RUN_MODE = keepMode;
+  T('10i 兩種規則都在節奏面板可選', CENTER_RUN_MODES.length === 2
+    && CENTER_RUN_MODES[0][0] === 'xc' && CENTER_RUN_MODES[1][0] === 'h5');
+
+  // --- 端對端：跑一局，記錄 SCORE_RUN 期間「得分欄」與「中央數字」的整條軌跡 ---
+  // sm＝起始倍數（>1 才會讓「相乘前的得分」與「最終得分」不同，跑分才看得出來）
+  function runTrace(mode, force, payMul, sm) {
+    reset(); ODDS.wToWild = 0; ODDS.maxRound = 1; forceSpinType = force;
+    ODDS.payMul = payMul; CENTER_RUN_MODE = mode;
+    var boxVals = [], centerVals = [], panelVals = [], holdVals = [], n = 0;
+    var flag = null, rw = 0, base = 0, ratio = 0, afterPanel = null, prevState = -1;
+    startSpin();
+    // 兩者都要在 startSpin 之後設：startSpin 會重置起始倍數並重抽功能卡。
+    // 清掉功能卡＝倍數與賠付都可預測；起始倍數 >1 才會讓「相乘前的得分 base」與「最終得分」不同，
+    // 不然低倍案例 base===score，就算程式錯誤地跑分也看不出來（斷言會假綠）。
+    features = []; startMult = sm || 1;
+    while (n < 200000) {
+      update(); n++;
+      if (slamResult && flag === null) {
+        flag = slamResult.run; rw = slamResult.score; base = slamResult.base;
+        ratio = rw / Math.max(1, ODDS.bet);
+      }
+      if (currentState === STATE.SCORE_RUN) {
+        boxVals.push(scoreBoxValue());
+        centerVals.push(slamResultValue());
+        panelVals.push(displayScore);        // 下方公版 WIN 用的就是這個值
+      }
+      if (currentState === STATE.SCORE_HOLD && slamResult) holdVals.push(slamResultValue());
+      // 這一回合的演繹結束（復原演繹跑完 → afterScore）之後，公版該切換到累計分數
+      if (afterPanel === null && prevState === STATE.SCORE_HOLD && currentState !== STATE.SCORE_HOLD) {
+        afterPanel = displayScore;
+      }
+      prevState = currentState;
+      if (currentState === STATE.IDLE && !inFG) break;
+    }
+    ODDS.payMul = DEFAULT_ODDS.payMul;
+    return { box: boxVals, center: centerVals, panel: panelVals, hold: holdVals,
+             afterPanel: afterPanel, spinWin: spinWin,
+             run: flag, win: rw, base: base, ratio: ratio, roundWin: rw };
+  }
+  function allSame(a) { return a.length > 0 && a.every(function (v) { return v === a[0]; }); }
+
+  // 低倍：星城規則下不跑分（payMul 壓低，確保 ratio < 10）
+  var lo = runTrace('xc', 'pair', 0.1, 4);
+  T('10i 低倍：中央判定為不跑分', lo.run === false, 'ratio=' + lo.ratio.toFixed(2));
+  T('10i 低倍：base 與最終得分不同（否則下面那條會假綠）',
+    lo.base !== lo.win, 'base=' + lo.base + ' win=' + lo.win);
+  T('10i 低倍：中央數字整段不變（直接顯示最終得分，沒有從 base 跑上來）',
+    allSame(lo.center) && lo.center[0] === lo.win, lo.center[0] + ' vs ' + lo.win);
+  T('10i 低倍：得分欄＝本回合得分（不含倍數、不跑分）',
+    allSame(lo.box) && lo.box[0] === lo.base, lo.box[0] + ' vs base=' + lo.base);
+  T('10i 低倍：得分欄不會變成相乘後的分數', lo.box[0] !== lo.roundWin,
+    lo.box[0] + ' vs roundWin=' + lo.roundWin);
+  T('10i 低倍：下方公版整段不跑分', allSame(lo.panel), lo.panel.join(',').slice(0, 40));
+  T('10i 低倍：回合演完後公版直接切換到累計分數',
+    lo.afterPanel === lo.spinWin && lo.panel[0] !== lo.spinWin,
+    '演繹中=' + lo.panel[0] + ' → 演完=' + lo.afterPanel + ' 累計=' + lo.spinWin);
+
+  // 高倍：星城規則下要跑分（皇家同花順 + payMul 拉滿）
+  var hi = runTrace('xc', 'royal', 5, 8);
+  T('10i 高倍：中央判定為跑分', hi.run === true, 'ratio=' + hi.ratio.toFixed(2));
+  T('10i 高倍：中央數字從相乘前的得分起跑',
+    Math.abs(hi.center[0] - hi.base) < Math.max(1, hi.base * 0.05),
+    hi.center[0] + ' 起跑，base=' + hi.base);
+  T('10i 高倍：跑分尾端已經逼近最終得分（最後一幀在 SCORE_HOLD 才到位）',
+    hi.center[hi.center.length - 1] >= hi.win * 0.95,
+    hi.center[hi.center.length - 1] + ' vs ' + hi.win);
+  T('10i 高倍：跑完（分數停留）停在最終得分',
+    hi.hold.length > 0 && hi.hold.every(function (v) { return v === hi.win; }),
+    hi.hold[0] + ' vs ' + hi.win);
+  T('10i 高倍：中央數字是遞增的（真的在跑）',
+    hi.center.length > 1 && hi.center[hi.center.length - 1] > hi.center[0]
+    && hi.center.every(function (v, i) { return i === 0 || v >= hi.center[i - 1]; }));
+  // 這兩條是關鍵：中央在跑，另外兩欄「不該變的沒變」
+  T('10i 高倍：中央在跑分，得分欄仍是本回合得分且整段不動',
+    allSame(hi.box) && hi.box[0] === hi.base, hi.box[0] + ' vs base=' + hi.base);
+  T('10i 高倍：中央在跑分，下方公版整段不跑', allSame(hi.panel), hi.panel.join(',').slice(0, 40));
+  T('10i 高倍：回合演完後公版直接切換到累計分數',
+    hi.afterPanel === hi.spinWin && hi.panel[0] !== hi.spinWin,
+    '演繹中=' + hi.panel[0] + ' → 演完=' + hi.afterPanel + ' 累計=' + hi.spinWin);
+
+  // 同一個高倍情境改成 H5 規則：大獎才跑；ratio 遠超 25 → 仍要跑
+  var hiH5 = runTrace('h5', 'royal', 5, 8);
+  T('10i H5 高倍（≥大獎）：中央仍跑分', hiH5.run === true, 'ratio=' + hiH5.ratio.toFixed(2));
+  var loH5 = runTrace('h5', 'pair', 0.1, 4);
+  T('10i H5 低倍：中央不跑分', loH5.run === false && allSame(loH5.center));
+  CENTER_RUN_MODE = keepMode;
   reset();
 
   /* ===== 10e. 改色 + 盤面框燈條 + 起始倍數加倍撞擊（2026-08-27）===== */

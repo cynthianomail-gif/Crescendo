@@ -179,7 +179,7 @@ function SCENE() {
   startMult = 4; payUnits = (handResult.pay + 10) * 2; curMult = (4 + 5) * 3;
   roundWin = Math.round(scoreNow() * curMult);
   winTier = tierOf(roundWin);
-  spinWin = roundWin; displayScore = 0; scoreFrom = 0;
+  spinWin = roundWin; displayScore = 0;
   freeCount = 2;
 
   // 【得分相乘演繹】靠攏中：兩欄往中間衝，中間的「×」還看得到
@@ -204,7 +204,7 @@ function SCENE() {
   startMult = 4; payUnits = (handResult.pay + 10) * 2; curMult = (4 + 5) * 3;
   roundWin = Math.round(scoreNow() * curMult);
   winTier = tierOf(roundWin);
-  spinWin = roundWin; displayScore = 0; scoreFrom = 0;
+  spinWin = roundWin; displayScore = 0;
   freeCount = 2;
 
   // 相撞瞬間：蓋過「×」符號、輪廓光往外擴、盤面中央彈出最終得分
@@ -212,7 +212,8 @@ function SCENE() {
   slamK = 0.97; slamHit = true;
   shakeAmp = 0;                       // 截圖要穩，震動不入鏡（實機有）
   slamRings = [{ t: 7, life: 25 }];
-  slamResult = { t: 8, score: roundWin, base: Math.round(scoreNow()), mult: curMult };
+  slamResult = { t: 8, score: roundWin, base: Math.round(scoreNow()), mult: curMult,
+                 run: centerRunEnabled(roundWin) };
 }
 """),
     ("11_slam_scorerun", """
@@ -232,14 +233,40 @@ function SCENE() {
   startMult = 4; payUnits = (handResult.pay + 10) * 2; curMult = (4 + 5) * 3;
   roundWin = Math.round(scoreNow() * curMult);
   winTier = tierOf(roundWin);
-  spinWin = roundWin; displayScore = 0; scoreFrom = 0;
+  spinWin = roundWin + 12000;            // 這是連爆的第 2 回合（前一回合累計 12,000）
   freeCount = 2;
 
   // 跑分中：兩欄保持貼合，中央結果牌回到 1.0 倍
   currentState = STATE.SCORE_RUN; stateTimer = 30;
-  displayScore = spinWin * 0.6;
+  displayScore = 12000;    // 公版：不跑分，維持上一回合的累計，回合演完才切換
   slamK = 1; slamHit = true;
-  slamResult = { t: 40, score: roundWin, base: Math.round(scoreNow()), mult: curMult };
+  slamResult = { t: 40, score: roundWin, base: Math.round(scoreNow()), mult: curMult,
+                 run: centerRunEnabled(roundWin) };
+}
+"""),
+    ("17_scorerun_norun", """
+function SCENE() {
+  // 小獎（得分 ÷ 押注 = 4 倍 < 10）：星城規則下中央數字不跑分，直接顯示最終得分。
+  // 左上得分欄停在相乘結果；下方公版的 WIN 才是跑最終分數的那一個。
+  SETB([ID(4,2), ID(4,1), ID(7,3), ID(10,0), ID(2,2)]);
+  for (var c = 0; c < 5; c++) { colStopped[c] = true; board[c][0].locked = true; }
+  features = [];
+  featOrder = []; featCursor = -1;
+  handResult = classifyHand(boardIds());
+  winCells = new Set(handResult.cells);
+  handLabelText = handResult.name; handLabelKind = 'hand';
+  CENTER_RUN_MODE = 'xc';
+  startMult = 4; payUnits = handResult.pay; curMult = 4;
+  roundWin = Math.round(scoreNow() * curMult);
+  winTier = tierOf(roundWin);
+  spinWin = roundWin + 12000;            // 連爆第 2 回合
+  freeCount = 1;
+
+  currentState = STATE.SCORE_RUN; stateTimer = 30;
+  displayScore = 12000;    // 公版：不跑分，維持上一回合的累計
+  slamK = 1; slamHit = true;
+  slamResult = { t: 40, score: roundWin, base: Math.round(scoreNow()), mult: curMult,
+                 run: centerRunEnabled(roundWin) };
 }
 """),
     ("12_boost_slam", """
