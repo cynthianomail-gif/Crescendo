@@ -242,6 +242,51 @@ function SCENE() {
   slamResult = { t: 40, score: roundWin, base: Math.round(scoreNow()), mult: curMult };
 }
 """),
+    ("12_boost_slam", """
+function SCENE() {
+  SETB([ID(4,2), ID(4,1), ID(4,3), ID(4,0), WILD_ID]);
+  for (var c = 0; c < 5; c++) { colStopped[c] = true; board[c][0].locked = true; }
+  features = rollFeatures(5);
+  handResult = classifyHand(boardIds());
+  winCells = new Set(handResult.cells);
+  handLabelText = handResult.name; handLabelKind = 'hand';
+  startMult = 4; winTier = 3; spinWin = 500000; displayScore = spinWin;
+  freeCount = 2;
+  // 【起始倍數加倍演繹】撞擊瞬間
+  currentState = STATE.MULT_BOOST; stateTimer = Math.round(F_MULTBOOST * 0.58);
+  boostK = 1; boostHit = true; shakeAmp = 0;
+  boostChevrons = [];
+  for (var i = 0; i < 18; i++) {
+    boostChevrons.push({
+      x: GRID_X + (i % 5) * CARD_W + CARD_W / 2 + ((i * 37) % 100 - 50) * 1.2,
+      y: GRID_Y + CARD_H * (0.2 + ((i * 53) % 100) / 140),
+      t: 4 + (i % 9), life: 30, s: FX.arrowSize * (0.5 + ((i * 29) % 50) / 100),
+    });
+  }
+  fireLamps('#a855f7'); lampFlash.t = 3;
+}
+"""),
+    ("13_feat_colors", """
+function SCENE() {
+  SETB([ID(6,0), ID(6,1), ID(10,2), WILD_ID, ID(8,1)]);
+  for (var c = 0; c < 5; c++) { colStopped[c] = true; board[c][0].locked = true; }
+  features = [
+    { type: FEAT_IDX.addScore, tier: 6,  value: 25, triggered: true,  flash: 0 },
+    { type: FEAT_IDX.mulScore, tier: 6,  value: 2,  triggered: true,  flash: 0 },
+    { type: FEAT_IDX.addMul,   tier: 10, value: 10, triggered: true,  flash: 0 },
+    { type: FEAT_IDX.mulMul,   tier: 8,  value: 3,  triggered: true,  flash: 0 },
+    { type: FEAT_IDX.toWild,   tier: 17, value: 0,  triggered: false, flash: 0 },
+  ];
+  handResult = classifyHand(boardIds());
+  winCells = new Set(handResult.cells);
+  handLabelText = handResult.name; handLabelKind = 'hand';
+  startMult = 2; curMult = 2; freeCount = 1;
+  displayScore = 12000; spinWin = 12000;
+  featOrder = [0, 1, 2, 3]; featCursor = -1;
+  // SHOWING_WIN：箭頭都在，顏色依命中的卡別
+  currentState = STATE.SHOWING_WIN; stateTimer = 5;
+}
+"""),
 ]
 
 src = io.open(SRC, encoding="utf-8").read()
