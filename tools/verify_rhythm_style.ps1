@@ -58,11 +58,12 @@ try {
   Check "刻度數字格右緣色"  (HexOf $g.Range("L8").Borders.Item(10).Color) "000000"
   Check "刻度數字格靠右"    $g.Range("L8").HorizontalAlignment (-4152)
   Check "甘特條無框線"      $g.Range("C9").Borders.Item(7).LineStyle (-4142)
-  # 事件標記「第1輪停輪」的欄位 = RCOL(reelStart)。Crescendo 的 reelStart = 1.0s
+  # 事件標記「第1輪停輪」的欄位 = RCOL(reelStart)。Crescendo 的 reelStart = 0.7s（節奏組工作表 AUTO 欄）
+  # 每小格 0.1 秒、B 欄起算 → 欄號 = 2 + reelStart*10；改了 reelStart 就要同步改下面三行
   # → 第 12 欄 = L（骨架的預設值落在 H，換遊戲這個座標本來就會變）。
-  Check "事件標記文字"      $g.Range("L10").Text "第1輪停輪"
-  Check "事件標記左框色"    (HexOf $g.Range("L10").Borders.Item(7).Color) "FF0000"
-  Check "事件標記左框粗細"  $g.Range("L10").Borders.Item(7).Weight (-4138)
+  Check "事件標記文字"      $g.Range("I10").Text "第1輪停輪"
+  Check "事件標記左框色"    (HexOf $g.Range("I10").Borders.Item(7).Color) "FF0000"
+  Check "事件標記左框粗細"  $g.Range("I10").Borders.Item(7).Weight (-4138)
   Check "欄寬"             $g.Columns("B").ColumnWidth 2.75
   Check "列高"             $g.Rows(9).RowHeight 21
 

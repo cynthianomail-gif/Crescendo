@@ -248,7 +248,7 @@ canvas { display: block; width: 100%; height: 100%; }
  * 面板本身（區塊 7）原則上不用動。
  * ========================================================== */
 
-const APP_BUILD = 'crescendo-12';   // 驗證用識別值：測到的是不是最新版，看這個
+const APP_BUILD = 'crescendo-13';   // 驗證用識別值：測到的是不是最新版，看這個
 const GAME_NAME = 'Crescendo';
 
 const canvas = document.getElementById('gameCanvas');
@@ -374,73 +374,182 @@ const FEAT_IDX = {};
 FEAT_TYPES.forEach((f, i) => { FEAT_IDX[f.key] = i; });
 const MAX_FEAT = 5;                                       // 功能列上限 [§一般遊戲 D41]
 
-/* --- 節奏（秒）。預設值取自 §節奏表 D3:P15 的 AUTO/Normal 規範數值 --- */
+/* --- 節奏（秒）------------------------------------------------------------
+ * 預設值＝節奏組工作表《Crescendo節奏組工作表.xlsx》的「工具參數表」AUTO 欄
+ *（使用者 2026-08-28 交來的實檔；該表有 AUTO / TURBO / TURBO2 三欄，見下面兩份）。
+ * 工作表沒有的項目是 demo 自己的演繹細節，標 [demo]，值沿用先前調好的。
+ * ------------------------------------------------------------------------ */
 const DEFAULT_TIMING = {
-  reelStart:      1.00,   // 轉輪啟動→第1輪停止 [§節奏表 D4/P4]
-  reelStopInterval:0.20,  // 停輪間隔第2~5輪 [§節奏表 D12:P15]
-  reelSpeed:      0.045,  // 捲動一格時間 [自設]
-  landBounce:     0.20,   // 落定回彈 [§節奏表 AI6 回彈0.2s]
-  winHold:        0.40,   // 停輪後中獎停頓 [§節奏表 D7/P7]
-  cardLock:       0.30,   // 得分牌鎖定演繹 [自設]
-  cardLift:       0.34,   // 得分牌抬起（出牌感）動畫時長 [自設]
-  cardLiftStagger:0.06,   // 得分牌逐張抬起的錯開間隔 [自設]
-  featTrigger:    0.45,   // 功能卡逐張觸發演繹 [自設：§美術需求說明無秒數]
-  multSlam:       0.60,   // 得分相乘演繹：兩欄位往中間碰撞 [§美術需求說明 H47]（秒數 [自設]，該分頁無秒數）
-  slamRestore:    0.35,   // 復原演繹：兩欄位往左右回原位 [§美術需求說明 H48]（秒數 [自設]）
-  preHold1:       0.30,   // 1階 得分相乘演繹前停留 [§高倍得分層級 E6]
-  preHold2:       0.80,   // 2階 [§層級 E9]
-  preHold3:       1.50,   // 3階 [§層級 E11]
-  postHold1:      0.30,   // 1階 相乘演繹後、跑分前停留 [§層級 F6]
-  postHold2:      0.80,   // 2階 [§層級 F9]
-  postHold3:      1.50,   // 3階 [§層級 F11]
-  scoreAppear:    1.00,   // 中獎後出現分數 [§節奏表 D8/P8]
-  scoreHold:      0.70,   // 分數停留時間 [§節奏表 D9/P9]
-  symbolFx:       1.00,   // 圖示演繹 [§節奏表 D10/P10，企劃標「(?)」待實測]
-  multBoost:      0.80,   // 起始倍數加倍演繹 [§節奏表 BQ49 倍數計算0.8s]
-  respinPause:    0.40,   // 有得分的重轉間停頓 [§節奏表 D11/P11]
-  idleGap:        0.40,   // 未得分局間停頓 [§節奏表 D6/P6]
-  drawHint:       1.00,   // 順子/同花預報（單格0.8s＋回彈0.2s）[§節奏表 AI6]
-  freeCollect:    0.60,   // FREE 收集進燈條 [自設]
-  bigWinHold:     1.80,   // 四階大獎報獎停留 [自設]
-  fgEnterHold:    1.60,   // 進 FG 轉場停留 [自設]
-  fgSpinGap:      0.40,   // FG 局間 [§節奏表 AI7：FG 一輪 0.4s]
-  autoSpinDelay:  0.45,   // AUTO 局間停頓 [自設]
+  // 滾輪
+  reelStart:       0.70,   // 滾輪啟動：滾動到第一輪完全停輪
+  reelStopInterval:0.20,   // 逐輪停止：每個滾輪停輪之間的間隔
+  reelSpeed:       0.045,  // 捲動一格時間 [demo]
+  landBounce:      0.20,   // 落定回彈 [demo]
+  // 停輪後的三種前置停頓
+  wildPre:         0.30,   // WILD轉換前停頓
+  winHold:         0.30,   // 中獎前停頓
+  freePre:         0.30,   // FREE收集演繹前停頓
+  // 得分牌
+  cardLock:        0.30,   // 得分牌鎖定演繹 [demo]
+  cardLift:        0.34,   // 得分牌抬起（出牌感）[demo]
+  cardLiftStagger: 0.06,   // 得分牌逐張抬起錯開 [demo]
+  // 功能卡：登場（轉輪期間逐張出現）與觸發（中獎後逐張作用）
+  featEnterDelay:  0,      // 滾輪啟動至首張功能卡登場間隔
+  featEnterGap:    0.10,   // 功能卡登場間隔
+  featHighHold:    0.30,   // 高倍功能卡登場後停頓
+  featFirstGap:    0.30,   // 首張功能卡觸發間隔
+  featNextGap:     0.30,   // 多張功能卡觸發間隔
+  featTrigger:     0.45,   // 每張功能卡的觸發演繹長度 [demo]
+  // 得分層級：相乘前停頓（1/2/3 階）
+  preHold1:        0.30,   // 0<贏分<25
+  preHold2:        0.80,   // 25≦贏分<100
+  preHold3:        1.50,   // 100≦贏分
+  multSlam:        0.60,   // 得分相乘演繹：兩欄位往中間碰撞 [demo，§美術 H47 無秒數]
+  // 結算得分（盤面中央那張）
+  resultDelay:     0.30,   // 結算得分顯示時機：相乘演繹開始後多久跳出（跳出即開始跑分）
+  scoreRun1:       1.40,   // 結算得分跑分時長（10≦贏分<20）
+  scoreRun2:       2.40,   // 結算得分跑分時長（20≦贏分<25）
+  scoreHold:       0.70,   // 結算得分顯示時長（跑完之後）
+  slamRestore:     0.35,   // 復原演繹：兩欄位回原位 [demo，§美術 H48]
+  postHold1:       0,      // [demo/企劃 §層級 F6] 相乘後、跑分前停留。
+  postHold2:       0,      //   工作表改用「結算得分顯示時機」表達，所以預設 0；
+  postHold3:       0,      //   要回到企劃的分階停留就把 0.3/0.8/1.5 填回來。
+  // 得分層級：震動與鏡頭拉近的「秒數」（幅度在下面的 FX，工作表那兩列沒填值）
+  shakeTime1:      0.30,   // 震動秒數(1) 0<贏分<25
+  shakeTime2:      0.80,   // 震動秒數(2) 25≦贏分<100
+  shakeTime3:      1.50,   // 震動秒數(3) 100≦贏分
+  zoomTime1:       0.40,   // 拉近秒數(1) 25≦贏分<100
+  zoomTime2:       0.40,   // 拉近秒數(2) 100≦贏分
+  // 其他演繹
+  scoreAppear:     1.00,   // 大獎畫面的跑分時長 [demo；中央結算的跑分見 scoreRun1/2]
+  symbolFx:        1.00,   // 圖示演繹 [demo]
+  multBoost:       0.80,   // 起始倍數加倍演繹 [demo]
+  // 重轉
+  respinPause:     0.30,   // RESPIN前停頓
+  respinReelStart: 0.70,   // RESPIN滾輪啟動
+  // 局間／預報／收集
+  idleGap:         0.30,   // 局間(未中獎)
+  autoSpinDelay:   0.30,   // 局間(中獎)
+  drawHint:        2.00,   // 預報演繹
+  freeCollect:     0.60,   // FREE 收集演繹本身 [demo]
+  // 大獎
+  bigWinPre:       1.00,   // 大獎前停頓
+  bigWinHold:      1.80,   // 大獎報獎停留 [demo]
+  // 轉場（FG 進出）
+  fgEnterPre:      0.30,   // 轉場前停頓
+  fgEnterHold:     1.60,   // 轉場演繹本身 [demo]
+  fgEnterPost:     0.70,   // 轉場後停頓
+  fgEndPre:        1.00,   // FG結束前停頓
+  fgBackPost:      0.70,   // 回NG後停頓
+  fgSpinGap:       0.40,   // FG 局間 [demo]
 };
-/* --- TURBO 節奏（秒）---
- * 公版工具參數表有 AUTO / TURBO 兩欄，這是 TURBO 那欄。面板頂端可切換編輯哪一組，
- * 切到 TURBO 時 demo 就用這組跑，拉完直接試轉驗證手感。
- * SOP 規範（節奏組檢核）：**Turbo 只能「濃縮」不能「略過」，也不可加速重要機制的演出**。
- * 所以【得分相乘演繹】的前後停留、跑分、起始倍數加倍、大獎、FG 轉場這幾項兩組值刻意相同。 */
+/* --- TURBO 節奏（秒）＝工作表的 TURBO 欄 ---
+ * SOP（節奏組檢核）：Turbo 只能「濃縮」不能「略過」，也不可加速重要機制的演出，
+ * 所以相乘演繹、得分層級停留、結算跑分、大獎、轉場這幾項與 AUTO 相同。 */
 const DEFAULT_TIMING_TURBO = {
-  reelStart:       0.50,   // SOP 滾輪轉動時間 TURBO 0.5–0.7
-  reelStopInterval: 0,     // SOP：TURBO 齊停
+  reelStart:       0.50,
+  reelStopInterval:0,
   reelSpeed:       0.035,
   landBounce:      0.10,
-  winHold:         0.30,   // SOP 停頓時間(中獎) TURBO 0.3
+  wildPre:         0.20,
+  winHold:         0.20,
+  freePre:         0.20,
   cardLock:        0.18,
   cardLift:        0.20,
   cardLiftStagger: 0.03,
+  featEnterDelay:  0,
+  featEnterGap:    0,
+  featHighHold:    0,
+  featFirstGap:    0.20,
+  featNextGap:     0.20,
   featTrigger:     0.25,
-  multSlam:        0.60,   // 重要機制，不加速
-  slamRestore:     0.20,
-  preHold1:        0.30,   // 得分層級停留：SOP 不可加速重要演出 → 與 AUTO 相同
+  preHold1:        0.30,
   preHold2:        0.80,
   preHold3:        1.50,
-  postHold1:       0.30,
-  postHold2:       0.80,
-  postHold3:       1.50,
-  scoreAppear:     1.00,   // SOP 得分演繹 0.7–1.2，兩組相同
+  multSlam:        0.60,
+  resultDelay:     0.30,
+  scoreRun1:       1.40,
+  scoreRun2:       2.40,
   scoreHold:       0.70,
-  symbolFx:        1.00,   // SOP 圖示演繹 0.5–1，兩組相同
-  multBoost:       0.80,   // 重要機制，不加速
-  respinPause:     0.30,   // SOP 停頓時間(盤間) 0.3
-  idleGap:         0.30,   // SOP 停頓時間(局間) TURBO 0.3
-  drawHint:        0,      // SOP 預報時間 TURBO 0
+  slamRestore:     0.20,
+  postHold1:       0,
+  postHold2:       0,
+  postHold3:       0,
+  shakeTime1:      0.30,
+  shakeTime2:      0.80,
+  shakeTime3:      1.50,
+  zoomTime1:       0.40,
+  zoomTime2:       0.40,
+  scoreAppear:     1.00,
+  symbolFx:        1.00,
+  multBoost:       0.80,
+  respinPause:     0.20,
+  respinReelStart: 0.50,
+  idleGap:         0.20,
+  autoSpinDelay:   0.20,
+  drawHint:        2.00,
   freeCollect:     0.35,
-  bigWinHold:      1.80,   // 大獎不加速
-  fgEnterHold:     1.60,   // 轉場不加速
+  bigWinPre:       1.00,
+  bigWinHold:      1.80,
+  fgEnterPre:      0.30,
+  fgEnterHold:     1.60,
+  fgEnterPost:     0.70,
+  fgEndPre:        1.00,
+  fgBackPost:      0.70,
   fgSpinGap:       0.30,
-  autoSpinDelay:   0.30,
+};
+/* --- TURBO2 節奏（秒）＝工作表的 TURBO2 欄（更快的第三檔） --- */
+const DEFAULT_TIMING_TURBO2 = {
+  reelStart:       0.20,
+  reelStopInterval:0,
+  reelSpeed:       0.025,
+  landBounce:      0.10,
+  wildPre:         0.10,
+  winHold:         0.10,
+  freePre:         0.10,
+  cardLock:        0.12,
+  cardLift:        0.14,
+  cardLiftStagger: 0.02,
+  featEnterDelay:  0,
+  featEnterGap:    0,
+  featHighHold:    0,
+  featFirstGap:    0,
+  featNextGap:     0,
+  featTrigger:     0.15,
+  preHold1:        0.30,
+  preHold2:        0.80,
+  preHold3:        1.50,
+  multSlam:        0.60,
+  resultDelay:     0.30,
+  scoreRun1:       1.40,
+  scoreRun2:       2.40,
+  scoreHold:       0.70,
+  slamRestore:     0.20,
+  postHold1:       0,
+  postHold2:       0,
+  postHold3:       0,
+  shakeTime1:      0.30,
+  shakeTime2:      0.80,
+  shakeTime3:      1.50,
+  zoomTime1:       0.40,
+  zoomTime2:       0.40,
+  scoreAppear:     1.00,
+  symbolFx:        1.00,
+  multBoost:       0.80,
+  respinPause:     0.10,
+  respinReelStart: 0.20,
+  idleGap:         0.10,
+  autoSpinDelay:   0.20,
+  drawHint:        2.00,
+  freeCollect:     0.25,
+  bigWinPre:       1.00,
+  bigWinHold:      1.80,
+  fgEnterPre:      0.30,
+  fgEnterHold:     1.60,
+  fgEnterPost:     0.70,
+  fgEndPre:        1.00,
+  fgBackPost:      0.70,
+  fgSpinGap:       0.20,
 };
 
 /* --- 節奏表匯出：對照節奏組公版 ---------------------------------
@@ -455,42 +564,78 @@ const RHYTHM_TYPE = '百搭+連爆';
 // 第 4 欄 = 對到「範本／節奏時間說明」的哪個 SOP 區間名，null 表示 SOP 沒規範這項。
 // 停頓類參數帶流水編號 aN，編號按在本表出現的先後（公版慣例）。
 const RHYTHM_MAP = [
-  ['reelStart',        '滾輪啟動',            '滾輪滾動到第一輪停輪所需的持續時間',                 '滾輪轉動時間'],
-  ['reelStopInterval', '逐輪停止',            '每個滾輪停輪之間的間格；設 0 為同時停輪',           '每輪停止時間'],
+  // key='#' 是分組標題列（只有名稱）。fixed 可以是字串或函式（函式在匯出當下求值）。
+  ['reelStart',        '滾輪啟動',            '滾輪滾動到第一輪完全停輪的時間',                     '滾輪轉動時間'],
+  ['reelStopInterval', '逐輪停止',            '每個滾輪停輪之間的間隔',                             '每輪停止時間'],
+  ['idleGap',          '局間(未中獎)',        '停輪後(未中獎)，到下一局啟動的停頓時間',             '停頓時間(局間)'],
+  ['autoSpinDelay',    '局間(中獎)',          '圖示歸位後，到下一局啟動的停頓時間',                 '停頓時間(局間)'],
+  ['wildPre',          'WILD轉換前停頓',      '停輪後，到WILD轉換演繹前的停頓時間',                 null],
+  ['winHold',          '中獎前停頓',          '停輪後/WILD轉換後，到圖示中獎演繹前的停頓時間',      '停頓時間(中獎)'],
+  ['freePre',          'FREE收集演繹前停頓',  '停輪後到FREE收集演繹前的停頓時間',                   null],
+  ['drawHint',         '預報演繹',            '預報滾輪運作時間',                                   null],
+
+  ['#', '結算得分'],
+  ['resultDelay',      '結算得分顯示時機',    '得分相乘演繹開始後，多久會跳出結算得分',             null],
+  ['scoreHold',        '結算得分顯示時長',    '結算得分顯示時間',                                   '公版分數'],
+  [null,               '結算得分可跳過時機',  '結算得分顯示多久可點擊關閉',                         null, '公版', '可先無視'],
+
+  ['#', '得分層級'],
+  ['preHold1',         '得分相乘前停頓(1)',   '得分進行相乘前的停頓時間',                           null, undefined, '0<贏分<25'],
+  ['preHold2',         '得分相乘前停頓(2)',   '得分進行相乘前的停頓時間',                           null, undefined, '25≦贏分<100'],
+  ['preHold3',         '得分相乘前停頓(3)',   '得分進行相乘前的停頓時間',                           null, undefined, '100≦贏分'],
+  ['scoreRun1',        '結算得分跑分時長(10≦贏分<20)', '結算得分跑分時間',                          null, undefined, '後面會接「結算得分顯示時長」'],
+  ['scoreRun2',        '結算得分跑分時長(20≦贏分<25)', '結算得分跑分時間',                          null, undefined, '後面會接「結算得分顯示時長」'],
+  ['shakeTime1',       '震動秒數(1)',         '得分+倍數欄位震動時長',                              null, undefined, '0<贏分<25'],
+  [null,               '震動幅度(1)',         '得分+倍數欄位震動幅度',                              null, () => R1(FX.shake1), 'px'],
+  ['shakeTime2',       '震動秒數(2)',         '得分+倍數欄位震動時長',                              null, undefined, '25≦贏分<100'],
+  [null,               '震動幅度(2)',         '得分+倍數欄位震動幅度',                              null, () => R1(FX.shake2), 'px'],
+  ['shakeTime3',       '震動秒數(3)',         '得分+倍數欄位震動時長',                              null, undefined, '100≦贏分'],
+  [null,               '震動幅度(3)',         '得分+倍數欄位震動幅度',                              null, () => R1(FX.shake3), 'px'],
+  ['zoomTime1',        '拉近秒數(1)',         '鏡頭拉近時長',                                       null, undefined, '25≦贏分<100'],
+  [null,               '拉近幅度(1)',         '鏡頭拉近幅度',                                       null, () => R1(FX.zoom2), '倍'],
+  ['zoomTime2',        '拉近秒數(2)',         '鏡頭拉近時長',                                       null, undefined, '100≦贏分'],
+  [null,               '拉近幅度(2)',         '鏡頭拉近幅度',                                       null, () => R1(FX.zoom3), '倍'],
+
+  ['#', '功能卡'],
+  ['featEnterDelay',   '滾輪啟動至首張功能卡登場間隔', '滾輪啟動至首張功能卡登場的間隔時間',        null],
+  ['featEnterGap',     '功能卡登場間隔',      '逐張功能卡登場後，到下一張功能卡登場的間隔時間',     null],
+  ['featHighHold',     '高倍功能卡登場後停頓','高倍功能卡登場後的停頓時間',                         null],
+  ['featFirstGap',     '首張功能卡觸發間隔',  '中獎演繹完畢後，觸發首張功能卡的間隔時間',           null],
+  ['featNextGap',      '多張功能卡觸發間隔',  '觸發完上張功能卡，到觸發下張功能卡的間隔時間',       null],
+
+  ['#', 'RESPIN'],
+  ['respinPause',      'RESPIN前停頓',        'RESPIN啟動前的停頓時間',                             '停頓時間(盤間)'],
+  ['respinReelStart',  'RESPIN滾輪啟動',      '滾輪滾動到第一個有滾動的滾輪，完全停輪的時間',       null],
+
+  ['#', '大獎'],
+  ['bigWinPre',        '大獎前停頓',          '圖示中獎後，到播放大獎前的停頓時間',                 null],
+  [null,               '大獎得分可跳過時機',  '大獎演繹至最後一階時，登場動畫演繹完畢後多久可點擊跳至總分', null, '公版', '可先無視'],
+
+  ['#', '轉場'],
+  ['fgEnterPre',       '轉場前停頓',          'FREE中獎演繹後，到出現FG轉場版前的停頓時間',         null],
+  ['fgEnterPost',      '轉場後停頓',          '轉場演繹完畢後，到FG第一局遊戲啟動前的停頓時間',     null],
+  ['fgEndPre',         'FG結束前停頓',        'FG最後一局結束時，到出現轉場版前的停頓時間',         null],
+  ['fgBackPost',       '回NG後停頓',          '轉場演繹完畢後，到下一局啟動的停頓時間',             null, undefined, '有設定AUTO'],
+
+  ['#', 'demo 追加（工具參數表沒有這幾列，是本 demo 的演繹細節）'],
   ['reelSpeed',        '滾輪滾動速度',        '滾輪捲動一格牌卡所需時間，越小越快',                 null],
-  [null,               '滾輪滾動曲線',        '承接滾輪時間參數，可設定滾輪滾動的速度變化曲線',     null, 'n'],
   ['landBounce',       '滾輪回彈時間',        '牌卡落定後回彈到完全停止的持續時間',                 null],
-  ['idleGap',          '局間(未中獎)a1',      '未中獎時的換局停頓時間',                             '停頓時間(局間)'],
-  ['winHold',          '中獎前停頓a2',        '停輪後，到播放得分牌演繹前的停頓時間',               '停頓時間(中獎)'],
   ['cardLock',         '得分牌鎖定演繹',      '得分牌鎖定（外框亮起）的持續時間',                   null],
   ['cardLift',         '得分牌抬起演繹',      '得分牌往上彈出、放大、扇形傾斜的持續時間',           '圖示演繹'],
   ['cardLiftStagger',  '得分牌逐張錯開',      '得分牌抬起時每張之間的錯開間格',                     null],
-  ['featTrigger',      '功能卡觸發演繹',      '每張功能卡由左至右逐一觸發的持續時間',               '圖示演繹'],
-  ['preHold1',         '得分相乘前停頓a3',    '1階：功能卡套用完畢，到得分相乘演繹前的停頓',        null],
-  ['preHold2',         '得分相乘前停頓a4',    '2階（25倍以上）',                                    null],
-  ['preHold3',         '得分相乘前停頓a5',    '3階（101倍以上）',                                   null],
+  ['featTrigger',      '單張功能卡觸發演繹',  '單張功能卡觸發時的演繹長度',                         '圖示演繹'],
+  ['symbolFx',         '圖示演繹',            'WILD 轉換等圖示演繹的持續時間',                      '圖示演繹'],
+  ['freeCollect',      'FREE收集演繹',        'FREE 圖示飛入計量條的持續時間',                      null],
   ['multSlam',         '得分相乘演繹',        '得分欄與倍數欄往中間碰撞相乘的持續時間',             null],
-  ['postHold1',        '跑分前停頓a6',        '1階：得分相乘演繹後，到得分數字跑分前的停頓',        '得分顯示間隔'],
-  ['postHold2',        '跑分前停頓a7',        '2階（25倍以上）',                                    '得分顯示間隔'],
-  ['postHold3',        '跑分前停頓a8',        '3階（101倍以上）',                                   '得分顯示間隔'],
-  ['scoreAppear',      '得分數字演繹',        '盤面中央得分數字的跑分持續時間（不跑分的級距同樣佔這段）', '得分演繹'],
-  ['scoreHold',        '得分數字停留',        '跑分結束後分數停留的持續時間',                       '公版分數'],
   ['slamRestore',      '復原演繹',            '得分欄與倍數欄往左右回到原位的持續時間',             null],
-  ['symbolFx',         '轉換WILD演繹',        '轉換 WILD 功能卡的光子傳遞演繹持續時間',             '圖示演繹'],
-  ['multBoost',        '起始倍數加倍演繹',    '5 張全中時，牌組向上撞擊、起始倍數加倍的持續時間',   null],
-  ['respinPause',      '重轉前停頓a9',        '得分演繹結束後，到重轉滾動啟動前的停頓時間',         '停頓時間(盤間)'],
-  ['drawHint',         '預報演繹',            '差一張成順子/同花時的預報持續時間',                  '預報時間'],
-  ['freeCollect',      'FREE收集演繹',        'FREE 圖示收集進計量條的持續時間',                    null],
-  ['autoSpinDelay',    '局間(中獎)a10',       '中獎時，分數關閉後到下一局轉輪啟動的停頓時間',       '停頓時間(局間)'],
-  ['fgSpinGap',        'FG局間a11',           'FG 中每一局之間的停頓時間',                          '停頓時間(局間)'],
-  ['bigWinHold',       '大獎演繹(停留)',      '大獎停留演繹的持續時間',                             '一般Big獎'],
-  ['fgEnterHold',      'FG轉場版',            'FG 轉場版的持續時間',                                'FG/BG宣告框'],
-  // 以下由特效檔／公版決定，demo 給不出值，一律填 FX／公版（誠實條款，不要拿 demo 暫代值充數）
-  [null, '大獎前停頓a12',   '大獎演繹前的停頓時間',                        null,          'FX'],
-  [null, '大獎演繹(跑分)',  '大獎跑分演繹的持續時間',                      null,          'FX'],
-  [null, '轉場前停頓a13',   'FREE 收集完成後，到出現 FG 轉場版前的停頓',   null,          'FX'],
-  [null, '轉場後停頓a14',   '轉場後，到 FG 第一局啟動前的停頓時間',        null,          '公版'],
-  [null, 'FG/BG結算框',     'FG 最後一局結束後，結算板顯示的持續時間',     'FG/BG結算框', '公版'],
+  ['postHold1',        '跑分前停留(1)',       '企劃 §層級 F6 的相乘後停留；工作表改用「結算得分顯示時機」表達，預設 0', null],
+  ['postHold2',        '跑分前停留(2)',       '同上（2階）',                                        null],
+  ['postHold3',        '跑分前停留(3)',       '同上（3階）',                                        null],
+  ['multBoost',        '起始倍數加倍演繹',    '5 張全中時起始倍數加倍的演繹持續時間',               null],
+  ['scoreAppear',      '大獎跑分時長',        '大獎畫面上分數跑分的持續時間',                       null],
+  ['bigWinHold',       '大獎報獎停留',        '大獎跑分結束後，報獎畫面停留的持續時間',             '一般Big獎'],
+  ['fgEnterHold',      '轉場演繹',            'FG 轉場版本身的演繹持續時間',                        null],
+  ['fgSpinGap',        'FG 局間',             'FG 中每一局之間的間隔時間',                          null],
 ];
 
 // SOP 標準值：區間名 → [AUTO, TURBO]。來源見 rhythm-sheet-format.md「SOP 標準值」。
@@ -560,37 +705,62 @@ const RHYTHM_FEAT_CARDS = 2;
 
 const TIMING_META = [
   { group: '滾輪／停輪', items: [
-    ['reelStart', '啟動→第1輪停'], ['reelStopInterval', '每輪停輪間隔'],
-    ['reelSpeed', '捲動一格時間', 0.01, 0.3, 0.005], ['landBounce', '落定回彈'] ] },
-  { group: '得分與功能卡', items: [
-    ['winHold', '停輪後中獎停頓'], ['cardLock', '得分牌鎖定'],
-    ['cardLift', '得分牌抬起時長'], ['cardLiftStagger', '逐張抬起錯開', 0, 0.5, 0.01],
-    ['featTrigger', '功能卡逐張觸發'],
-    ['scoreAppear', '中獎後出現分數'], ['scoreHold', '分數停留'],
-    ['symbolFx', '圖示演繹'], ['multBoost', '起始倍數加倍'] ] },
-  { group: '得分相乘演繹 [§美術 F47/F48]', items: [
-    ['multSlam', '兩欄位碰撞時長'], ['slamRestore', '復原回位時長'] ] },
-  { group: '得分層級停留（1/2/3 階）', items: [
-    ['preHold1', '1階 演繹前停留'], ['preHold2', '2階 演繹前停留'], ['preHold3', '3階 演繹前停留'],
+    ['reelStart', '滾輪啟動'], ['reelStopInterval', '逐輪停止'],
+    ['reelSpeed', '捲動一格時間', 0.01, 0.3, 0.005], ['landBounce', '落定回彈'],
+    ['respinReelStart', 'RESPIN滾輪啟動'] ] },
+  { group: '停輪後的前置停頓', items: [
+    ['wildPre', 'WILD轉換前停頓'], ['winHold', '中獎前停頓'],
+    ['freePre', 'FREE收集演繹前停頓'], ['freeCollect', 'FREE收集演繹'],
+    ['drawHint', '預報演繹'] ] },
+  { group: '得分牌與功能卡', items: [
+    ['cardLock', '得分牌鎖定'], ['cardLift', '得分牌抬起時長'],
+    ['cardLiftStagger', '逐張抬起錯開', 0, 0.5, 0.01],
+    ['featEnterDelay', '啟動至首張卡登場'], ['featEnterGap', '功能卡登場間隔'],
+    ['featHighHold', '高倍卡登場後停頓'],
+    ['featFirstGap', '首張卡觸發間隔'], ['featNextGap', '多張卡觸發間隔'],
+    ['featTrigger', '單張卡觸發演繹'], ['symbolFx', '圖示演繹'] ] },
+  { group: '得分層級（相乘前停頓）', items: [
+    ['preHold1', '1階 0<贏分<25'], ['preHold2', '2階 25≦贏分<100'], ['preHold3', '3階 100≦贏分'],
+    ['multSlam', '得分相乘演繹'], ['slamRestore', '復原演繹'] ] },
+  { group: '結算得分（盤面中央）', items: [
+    ['resultDelay', '結算得分顯示時機'],
+    ['scoreRun1', '跑分時長 10≦贏分<20'], ['scoreRun2', '跑分時長 20≦贏分<25'],
+    ['scoreHold', '結算得分顯示時長'],
     ['postHold1', '1階 跑分前停留'], ['postHold2', '2階 跑分前停留'], ['postHold3', '3階 跑分前停留'] ] },
-  { group: '重轉／預報', items: [
-    ['respinPause', '有得分重轉間隔'], ['idleGap', '未得分局間'],
-    ['drawHint', '順子/同花預報'], ['freeCollect', 'FREE 收集'] ] },
-  { group: '報獎／FG／AUTO', items: [
-    ['bigWinHold', '大獎報獎停留', 0, 8, 0.1], ['fgEnterHold', 'FG 轉場停留', 0, 8, 0.1],
-    ['fgSpinGap', 'FG 局間'], ['autoSpinDelay', 'AUTO 局間'] ] },
+  { group: '得分層級（震動／拉近秒數）', items: [
+    ['shakeTime1', '震動秒數(1)'], ['shakeTime2', '震動秒數(2)'], ['shakeTime3', '震動秒數(3)'],
+    ['zoomTime1', '拉近秒數(1)'], ['zoomTime2', '拉近秒數(2)'] ] },
+  { group: '大獎', items: [
+    ['bigWinPre', '大獎前停頓'], ['scoreAppear', '大獎跑分時長'],
+    ['bigWinHold', '大獎報獎停留', 0, 8, 0.1] ] },
+  { group: '轉場（FG 進出）', items: [
+    ['fgEnterPre', '轉場前停頓'], ['fgEnterHold', '轉場演繹', 0, 8, 0.1],
+    ['fgEnterPost', '轉場後停頓'], ['fgEndPre', 'FG結束前停頓'],
+    ['fgBackPost', '回NG後停頓'], ['fgSpinGap', 'FG 局間'] ] },
+  { group: '局間／重轉', items: [
+    ['respinPause', 'RESPIN前停頓'], ['idleGap', '局間(未中獎)'],
+    ['autoSpinDelay', '局間(中獎)'], ['multBoost', '起始倍數加倍'] ] },
+];
+/* 節奏分頁裡一起列出來的「幅度」類參數（工作表的震動幅度／拉近幅度那幾列沒填值，
+ * 用 demo 既有的 FX 值；這幾項存在 FX 裡，在【特效】分頁也調得到，是同一份值）。 */
+const TIMING_TAB_FX = [
+  ['shake1', '震動幅度(1)'], ['shake2', '震動幅度(2)'], ['shake3', '震動幅度(3)'],
+  ['zoom2',  '拉近幅度(1)'], ['zoom3',  '拉近幅度(2)'],
 ];
 // 甘特圖起點（秒）：同組內各段演繹在時間軸上的相對位置，只影響面板視覺
 const DEFAULT_TIMING_START = {
-  reelStart: 0, reelStopInterval: 1.00, reelSpeed: 0, landBounce: 1.80,
-  winHold: 0, cardLock: 0.40, cardLift: 0.40, cardLiftStagger: 0.40, featTrigger: 0.70,
-  preHold1: 1.15, preHold2: 1.15, preHold3: 1.15,
-  multSlam: 1.45,
-  postHold1: 2.05, postHold2: 2.05, postHold3: 2.05,
-  scoreAppear: 2.35, scoreHold: 3.35, slamRestore: 4.05,
-  symbolFx: 0.40, multBoost: 4.40,
-  respinPause: 0, idleGap: 0, drawHint: 0.40, freeCollect: 0.40,
-  bigWinHold: 0, fgEnterHold: 0, fgSpinGap: 1.80, autoSpinDelay: 0,
+  reelStart: 0, reelStopInterval: 0.70, reelSpeed: 0, landBounce: 1.30, respinReelStart: 0,
+  wildPre: 0, winHold: 0.30, freePre: 0, freeCollect: 0.30, drawHint: 0.30,
+  cardLock: 0, cardLift: 0.30, cardLiftStagger: 0.30,
+  featEnterDelay: 0, featEnterGap: 0.10, featHighHold: 0.20,
+  featFirstGap: 0.60, featNextGap: 0.90, featTrigger: 0.90, symbolFx: 0.30,
+  preHold1: 0, preHold2: 0, preHold3: 0, multSlam: 1.50, slamRestore: 2.10,
+  resultDelay: 0, scoreRun1: 0.30, scoreRun2: 0.30, scoreHold: 1.70,
+  postHold1: 0.30, postHold2: 0.30, postHold3: 0.30,
+  shakeTime1: 0, shakeTime2: 0, shakeTime3: 0, zoomTime1: 0, zoomTime2: 0,
+  bigWinPre: 0, scoreAppear: 1.00, bigWinHold: 2.00,
+  fgEnterPre: 0, fgEnterHold: 0.30, fgEnterPost: 1.90, fgEndPre: 0, fgBackPost: 0, fgSpinGap: 0,
+  respinPause: 0, idleGap: 0, autoSpinDelay: 0, multBoost: 0,
 };
 
 /* --- 佈局（px）---
@@ -833,17 +1003,19 @@ const FORCE_DEMO = {
 };
 
 /* --- 執行期值：由預設複製而來，面板改的是這幾份 --- */
-// 節奏有 AUTO / TURBO 兩組。TIMING 永遠指向「當前生效」那一組，
+// 節奏有 AUTO / TURBO / TURBO2 三組（照節奏組工作表的三欄）。TIMING 永遠指向「當前生效」那一組，
 // 所以程式各處照舊寫 TF(TIMING.xxx)，不用管現在是哪一組。
-// ⚠️ 重建 TIMING_AUTO/TIMING_TURBO 之後一定要再呼叫 setSpeedMode() 重新指向，
+// ⚠️ 重建這三份之後一定要再呼叫 setSpeedMode() 重新指向，
 //    否則 TIMING 還指著被丟掉的舊物件，面板拉了不會生效。
-let TIMING_AUTO  = Object.assign({}, DEFAULT_TIMING);
-let TIMING_TURBO = Object.assign({}, DEFAULT_TIMING_TURBO);
-let SPEED_MODE   = 'auto';               // 'auto' | 'turbo'
+let TIMING_AUTO   = Object.assign({}, DEFAULT_TIMING);
+let TIMING_TURBO  = Object.assign({}, DEFAULT_TIMING_TURBO);
+let TIMING_TURBO2 = Object.assign({}, DEFAULT_TIMING_TURBO2);
+let SPEED_MODE   = 'auto';               // 'auto' | 'turbo' | 'turbo2'
 let TIMING       = TIMING_AUTO;
 function setSpeedMode(m) {
-  SPEED_MODE = (m === 'turbo') ? 'turbo' : 'auto';
-  TIMING = (SPEED_MODE === 'turbo') ? TIMING_TURBO : TIMING_AUTO;
+  SPEED_MODE = (m === 'turbo' || m === 'turbo2') ? m : 'auto';
+  TIMING = SPEED_MODE === 'turbo' ? TIMING_TURBO
+         : SPEED_MODE === 'turbo2' ? TIMING_TURBO2 : TIMING_AUTO;
   applyTuning();
 }
 let TIMING_START = Object.assign({}, DEFAULT_TIMING_START);
@@ -883,6 +1055,12 @@ let F_WINHOLD = 24, F_CARDLOCK = 18, F_FEAT = 27, F_SCOREAPPEAR = 60, F_SCOREHOL
 let F_SYMFX = 60, F_MULTBOOST = 48, F_RESPIN = 24, F_IDLE = 24, F_DRAWHINT = 60;
 let F_FREECOL = 36, F_BIGWIN = 108, F_FGENTER = 96, F_FGGAP = 24, F_AUTO = 27;
 let F_MULTSLAM = 36, F_SLAMRESTORE = 21;
+// 工作表新增的參數（使用者 2026-08-28 交來的《Crescendo節奏組工作表》）
+let F_WILDPRE = 18, F_FREEPRE = 18, F_RESULTDELAY = 18, F_RESPINREEL = 42;
+let F_FEATFIRST = 18, F_FEATNEXT = 18, F_FEATENTER = 0, F_FEATENTERGAP = 6, F_FEATHIGH = 18;
+let F_BIGWINPRE = 60, F_FGENTERPRE = 18, F_FGENTERPOST = 42, F_FGENDPRE = 60, F_FGBACKPOST = 42;
+let F_SCORERUN = [];        // [tier] 結算得分跑分幀數（0 = 不跑分）
+let F_SHAKET = [], F_ZOOMT = [];
 const SLAM_HIT_AT = 0.55;   // 相乘演繹進行到幾成時「相撞」（前段靠攏、後段回彈）
 let F_PRE = [], F_POST = [];
 let POP_TIERS = [], WIN_FRAME_TIERS = [], SHAKE_TIERS = [], ZOOM_TIERS = [];
@@ -917,6 +1095,25 @@ function applyTuning() {
   F_FGENTER     = TF(TIMING.fgEnterHold);
   F_FGGAP       = TF(TIMING.fgSpinGap);
   F_AUTO        = TF(TIMING.autoSpinDelay);
+  F_WILDPRE     = TF(TIMING.wildPre);
+  F_FREEPRE     = TF(TIMING.freePre);
+  F_RESULTDELAY = TF(TIMING.resultDelay);
+  F_RESPINREEL  = TF(TIMING.respinReelStart);
+  F_FEATFIRST   = TF(TIMING.featFirstGap);
+  F_FEATNEXT    = TF(TIMING.featNextGap);
+  F_FEATENTER   = Math.max(0, Math.round(TIMING.featEnterDelay * 60));
+  F_FEATENTERGAP= Math.max(0, Math.round(TIMING.featEnterGap * 60));
+  F_FEATHIGH    = Math.max(0, Math.round(TIMING.featHighHold * 60));
+  F_BIGWINPRE   = TF(TIMING.bigWinPre);
+  F_FGENTERPRE  = TF(TIMING.fgEnterPre);
+  F_FGENTERPOST = TF(TIMING.fgEnterPost);
+  F_FGENDPRE    = TF(TIMING.fgEndPre);
+  F_FGBACKPOST  = TF(TIMING.fgBackPost);
+  // 結算得分的跑分時長分兩段（工作表：10≦贏分<20 用 scoreRun1，20≦贏分<25 用 scoreRun2）
+  F_SCORERUN = [TF(TIMING.scoreRun1), TF(TIMING.scoreRun2)];
+  // 震動／拉近的持續時間（幅度在 FX，工作表那幾列沒填值）
+  F_SHAKET = [0, TF(TIMING.shakeTime1), TF(TIMING.shakeTime2), TF(TIMING.shakeTime3)];
+  F_ZOOMT  = [0, 0, TF(TIMING.zoomTime1), TF(TIMING.zoomTime2)];
 
   // 得分層級停留（index 1/2/3 對應 §高倍得分層級設計 的一/二/三階）
   F_PRE  = [0, TF(TIMING.preHold1),  TF(TIMING.preHold2),  TF(TIMING.preHold3)];
@@ -1007,6 +1204,9 @@ const STATE = {
   // 得分相乘演繹 [§美術需求說明 F47]：所有卡牌作用完畢、計算得分時，
   // 得分欄與倍數欄互相往中間碰撞相乘；SCORE_HOLD 尾段做【復原演繹】[H48] 把兩欄推回原位。
   MULT_SLAM: 16, SCORE_HOLD: 17,
+  // 通用停頓：工作表上那些「XX前/後停頓」共用這一個狀態，停完再跳到指定狀態或呼叫指定函式，
+  // 不用為每個停頓各開一個 case（holdFrames/holdNext/holdThen 記著停多久、停完去哪）
+  HOLD: 18,
 };
 let currentState = STATE.IDLE;
 
@@ -1035,6 +1235,9 @@ let spinWin = 0, fgWin = 0, totalScore = 0, displayScore = 0;
 let bigWinLabel = '';
 let bigWinShown = 0;           // 本局已經報過的大獎階數（0 = 還沒報），只往上升不重複報
 let bigWinFrom = 0, bigWinTo = 0;   // 大獎畫面上跑分的起訖值（上一回合累計 → 本局累計）
+let resultT = 0;        // 結算得分面板出現後的幀數（跑分進度用；面板一出現就在跑）
+let spinElapsed = 0;    // 本局開始後的幀數（功能卡逐張登場用）
+let slamElapsed = 0;    // 得分相乘演繹開始後的幀數（拿來比對「結算得分顯示時機」）
 let handLabelText = '', handLabelKind = '';
 let wildBeams = [];
 
@@ -1047,6 +1250,24 @@ let stats = { spins: 0, hits: 0 };
 let hasHitThisSpin = false;
 let particles = [], floatTexts = [];
 let shakeAmp = 0, zoomAmp = 1;
+let shakeBase = 0, shakeLeft = 0, shakeTotal = 1;   // 震動：幅度 FX、秒數 TIMING.shakeTimeN
+let zoomBase = 1, zoomLeft = 0, zoomTotal = 1;      // 拉近：幅度 FX、秒數 TIMING.zoomTimeN
+let holdFrames = 0, holdNext = null, holdThen = null;
+function goHold(frames, next, then) {
+  holdFrames = Math.max(0, frames); holdNext = (next === undefined ? null : next);
+  holdThen = then || null;
+  currentState = STATE.HOLD; stateTimer = 0;
+}
+// 停頓結束後「立刻」啟動下一局用：把 IDLE 的等待時間直接補滿
+function goIdleNow() { currentState = STATE.IDLE; stateTimer = 1e6; }
+function startShake(amp, frames) {
+  shakeBase = Math.max(shakeBase, amp); shakeAmp = shakeBase;
+  shakeTotal = Math.max(1, frames); shakeLeft = shakeTotal;
+}
+function startZoom(z, frames) {
+  zoomBase = z; zoomAmp = z;
+  zoomTotal = Math.max(1, frames); zoomLeft = Math.max(0, frames);
+}
 
 /* 得分相乘演繹的執行期狀態 [§美術需求說明 H47/H48]
  *   slamK      0 = 兩欄各在原位；1 = 完全靠攏（碰撞完成，蓋過中間的「×」符號）
@@ -1072,7 +1293,7 @@ const BOOST_CHARGE_AT = 0.22;  // 集氣結束、開始往上衝
 const BOOST_HIT_AT    = 0.55;  // 撞擊瞬間
 function onBoostHit() {
   boostHit = true;
-  shakeAmp = Math.max(shakeAmp, FX.shake3);          // 一次大的震動 [H12②]
+  startShake(FX.shake3, F_SHAKET[3] || 0);           // 一次大的震動 [H12②]
   const n = Math.max(0, Math.round(FX.boostChevrons));
   const cells = (handResult && handResult.cells) ? handResult.cells : [];
   for (let i = 0; i < n; i++) {
@@ -1249,12 +1470,22 @@ function rollFeatCount() {
   return pickWeighted([1, 2, 3, 4, 5],
     [ODDS.featW1, ODDS.featW2, ODDS.featW3, ODDS.featW4, ODDS.featW5]);
 }
+/* 功能卡登場 [工作表]：滾輪啟動後 featEnterDelay 出現第一張，之後每張間隔 featEnterGap，
+ * 高倍卡登場後多停 featHighHold。enterFrame＝這張卡從開局後第幾幀才出現在功能列。 */
 function rollFeatures(n) {
   const cnt = Math.min(MAX_FEAT, n === undefined ? rollFeatCount() : n);
   const arr = [];
-  for (let i = 0; i < cnt; i++) arr.push(newFeature());
+  let t = F_FEATENTER;
+  for (let i = 0; i < cnt; i++) {
+    const f = newFeature();
+    f.enterFrame = t;
+    t += F_FEATENTERGAP + (isHighFeat(f) ? F_FEATHIGH : 0);
+    arr.push(f);
+  }
   return arr;
 }
+// 這張卡現在該不該畫出來（登場後才畫；重轉中途加的卡 enterFrame 不存在＝立刻出現）
+function featShown(f) { return !(f.enterFrame > 0) || spinElapsed >= f.enterFrame; }
 function tierMatches(tier, id) {
   if (!isCard(id)) return false;
   if (tier.kind === 'rank') return rankOf(id) === tier.v;
@@ -1597,12 +1828,14 @@ function makeTargetBoard(force, cols) {
 }
 
 /* ---------- 滾輪控制 ---------- */
-function beginReels(cols) {
+// isRespin＝這次是重轉（RESPIN／FREE 重轉／差一張重轉）→ 用「RESPIN滾輪啟動」那個時間 [工作表]
+function beginReels(cols, isRespin) {
   spinCols = cols.slice();
   targetBoard = makeTargetBoard(forceActive, spinCols);
   colStopFrame = [];
   let k = 0;
-  const first = TF(TIMING.reelStart), gap = TF(TIMING.reelStopInterval);
+  const first = isRespin ? F_RESPINREEL : TF(TIMING.reelStart);
+  const gap = TF(TIMING.reelStopInterval);
   for (let c = 0; c < COLS; c++) {
     colOffsets[c] = 0;
     colBounce[c] = 0;
@@ -1647,16 +1880,14 @@ function onReelsStopped() {
   if (freeCells.length > 0 && freeRespins < 10) {
     freeCount = Math.min(ODDS.fgFree, freeCount + freeCells.length);
     if (freeCount >= ODDS.fgFree) fgPending = true;      // 局末才進 FG [§FREE GAME D18]
-    currentState = STATE.FREE_COLLECT;
-    stateTimer = 0;
+    goHold(F_FREEPRE, STATE.FREE_COLLECT);   // FREE收集演繹前停頓
     return;
   }
   // 2) 轉換 WILD 功能卡
   const conv = applyWildConvert();
   if (conv.length > 0) {
     wildBeams = conv.map(c => ({ c: c, t: 0 }));
-    currentState = STATE.WILD_CONVERT;
-    stateTimer = 0;
+    goHold(F_WILDPRE, STATE.WILD_CONVERT);   // WILD轉換前停頓
     return;
   }
   currentState = STATE.CHECKING;
@@ -1713,8 +1944,9 @@ function finishFeatures() {
   totalScore += roundWin;
   // 鏡頭拉近在「得分相乘_演繹前停留」時發生 [§高倍得分層級設計 J4]；
   // 震動則等到兩欄真的相撞那一瞬間才給 [§美術需求說明 H47]，所以不在這裡設 shakeAmp。
-  zoomAmp = ZOOM_TIERS[winTier] || 1;
+  startZoom(ZOOM_TIERS[winTier] || 1, F_ZOOMT[winTier] || 0);   // 拉近秒數 [工作表]
   slamK = 0; slamHit = false; slamRings = []; slamResult = null;
+  slamElapsed = 0; resultT = 0;
   spawnPopParticles();
   currentState = STATE.PRE_HOLD;
   stateTimer = 0;
@@ -1726,22 +1958,28 @@ function finishFeatures() {
  * 相乘結果彈到盤面中央（企劃只寫到「碰撞」，結果顯示在盤面中央是使用者 2026-08-27 追加的指定）。 */
 function onSlamHit() {
   slamHit = true;
-  shakeAmp = SHAKE_TIERS[winTier] || 0;
+  startShake(SHAKE_TIERS[winTier] || 0, F_SHAKET[winTier] || 0);  // 震動秒數 [工作表]
   slamRings.push({ t: 0, life: Math.max(6, Math.round(F_MULTSLAM * 0.7)) });
 }
 /* 盤面中央的得分數字面板：**在跑分開始的那一刻才出現，一出來就是在跑的狀態**
  * [使用者 2026-08-28]——不要先跳出來停著、等停頓完才開始跑。
  * 所以它不在碰撞時建立，而是在進入 SCORE_RUN 時建立。 */
 function startScoreRun() {
+  const run = centerRunEnabled(roundWin);           // 這回合跑不跑分，見 CENTER_RUN_MODES
+  const ratio = roundWin / Math.max(1, ODDS.bet);
+  // 跑分時長依工作表分兩段：10≦贏分<20 用 scoreRun1、20 倍以上用 scoreRun2；不跑分＝0
+  const runFrames = !run ? 0 : (ratio < 20 ? (F_SCORERUN[0] || 0) : (F_SCORERUN[1] || 0));
+  resultT = 0;
   slamResult = showScorePopup
     ? { t: 0, score: roundWin, base: Math.round(scoreNow()), mult: curMult,
-        run: centerRunEnabled(roundWin) }     // run＝這回合跑不跑分，見 CENTER_RUN_MODES
+        run: run, runFrames: runFrames }
     : null;
-  currentState = STATE.SCORE_RUN; stateTimer = 0;
 }
-// 中央面板從跑分開始活到「復原演繹」為止
+// 中央面板：從「結算得分顯示時機」跳出來（可能還在相乘演繹中）活到復原演繹為止
 function slamResultAlive() {
-  return currentState === STATE.SCORE_RUN || currentState === STATE.SCORE_HOLD;
+  return currentState === STATE.MULT_SLAM || currentState === STATE.POST_HOLD
+      || currentState === STATE.SCORE_RUN || currentState === STATE.SCORE_HOLD
+      || currentState === STATE.HOLD;
 }
 function afterScore() {
   // 這一回合演完了 → 下方公版的累積分數直接切換到新的累計值（不跑分）[使用者 2026-08-28]
@@ -1776,7 +2014,7 @@ function doRespin() {
   handLabelKind = 'again';
   features.forEach(f => { f.triggered = false; });
   drawRespinUsed = 0;
-  beginReels(cols);
+  beginReels(cols, true);
 }
 function doDrawRespin() {
   drawRespinUsed++;
@@ -1832,10 +2070,12 @@ function endSpin() {
 // 一局的收尾（進 FG／FG 扣局數／AUTO 扣次數／回待機）。大獎已經在回合中報過了。
 function finishSpin() {
   bigWinLabel = '';
-  if (!inFG && fgPending) { currentState = STATE.FG_ENTER; stateTimer = 0; return; }
+  // 轉場前停頓：FREE 中獎演繹後，到出現 FG 轉場版前 [工作表]
+  if (!inFG && fgPending) { goHold(F_FGENTERPRE, STATE.FG_ENTER); return; }
   if (inFG) {
     fgLeft--;
-    if (fgLeft <= 0) { currentState = STATE.FG_END; stateTimer = 0; return; }
+    // FG結束前停頓：FG 最後一局結束，到出現轉場版前 [工作表]
+    if (fgLeft <= 0) { goHold(F_FGENDPRE, STATE.FG_END); return; }
   } else if (isAutoSpinning && autoSpinCount > 0) {
     autoSpinCount--;
     if (autoSpinCount === 0) isAutoSpinning = false;
@@ -1852,6 +2092,7 @@ function startSpin() {
   const demo = FORCE_DEMO[buy];              // 「直接測跑分」的強開選項
   forceActive = demo ? demo.hand : buy;      // 落定盤面用對照表指定的牌型
   spinWin = 0; displayScore = 0; roundIdx = 0;
+  spinElapsed = 0;                          // 功能卡登場用的開局計時
   payUnits = 0;                             // 得分欄歸零（新的一局還沒有得分）
   scoredKeys = new Set();
   hasHitThisSpin = false;
@@ -1931,6 +2172,7 @@ function skipCurrent() {
   jump[STATE.MULT_BOOST]   = F_MULTBOOST;
   jump[STATE.DRAW_HINT]    = F_DRAWHINT;
   jump[STATE.BIGWIN]       = F_SCOREAPPEAR + F_BIGWIN;
+  jump[STATE.HOLD]         = holdFrames;
   jump[STATE.FG_ENTER]     = F_FGENTER;
   jump[STATE.FG_END]       = F_FGENTER;
   if (jump[currentState] !== undefined) {
@@ -1952,8 +2194,12 @@ function update() {
   for (let c = 0; c < COLS; c++) {
     if (colBounce[c] > 0.2) colBounce[c] *= BOUNCE_DECAY; else colBounce[c] = 0;
   }
-  if (shakeAmp > 0.1) shakeAmp *= 0.88; else shakeAmp = 0;
-  if (zoomAmp > 1.001) zoomAmp = 1 + (zoomAmp - 1) * 0.94; else zoomAmp = 1;
+  spinElapsed++;              // 本局計時（功能卡逐張登場用）
+  // 震動／拉近：持續時間由節奏參數決定（工作表的「震動秒數／拉近秒數」），期間線性收掉
+  if (shakeLeft > 0) { shakeLeft--; shakeAmp = shakeBase * (shakeLeft / shakeTotal); }
+  else { shakeAmp = 0; shakeBase = 0; }
+  if (zoomLeft > 0) { zoomLeft--; zoomAmp = 1 + (zoomBase - 1) * (zoomLeft / zoomTotal); }
+  else { zoomAmp = 1; zoomBase = 1; }
   features.forEach(f => { if (f.flash > 0) f.flash = Math.max(0, f.flash - 0.04); });
   wildBeams.forEach(b => { b.t++; });
   slamRings = slamRings.filter(r => { r.t++; return r.t < r.life; });
@@ -1977,7 +2223,7 @@ function update() {
         freeRespins++;
         const cols = [];
         for (let c = 0; c < COLS; c++) cols.push(board[c][0].id === FREE_ID);
-        beginReels(cols);                       // 重轉該輪 [§一般遊戲 E65]
+        beginReels(cols, true);                 // 重轉該輪 [§一般遊戲 E65]
       }
       break;
 
@@ -1993,16 +2239,22 @@ function update() {
       if (stateTimer >= F_WINHOLD + F_CARDLOCK) {
         featCursor = -1;
         if (featOrder.length === 0) { finishFeatures(); }
-        else { currentState = STATE.FEAT_APPLY; stateTimer = F_FEAT; }
+        else { currentState = STATE.FEAT_APPLY; stateTimer = 0; }   // 等「首張功能卡觸發間隔」
       }
       break;
 
+    // 功能卡逐張觸發：首張等 featFirstGap，之後每張等 featNextGap；
+    // 最後一張要讓它自己的觸發演繹（featTrigger）播完才收 [工作表]
     case STATE.FEAT_APPLY:
       stateTimer++;
-      if (stateTimer >= F_FEAT) {
-        featCursor++;
-        if (featCursor < featOrder.length) { applyFeatureAt(featOrder[featCursor]); stateTimer = 0; }
-        else finishFeatures();
+      {
+        const last = featCursor >= featOrder.length - 1;
+        const need = featCursor < 0 ? F_FEATFIRST : (last ? Math.max(F_FEATNEXT, F_FEAT) : F_FEATNEXT);
+        if (stateTimer >= need) {
+          featCursor++;
+          if (featCursor < featOrder.length) { applyFeatureAt(featOrder[featCursor]); stateTimer = 0; }
+          else finishFeatures();
+        }
       }
       break;
 
@@ -2030,10 +2282,16 @@ function update() {
           slamK = 1 - Math.max(0, FX.slamOvershoot) * Math.sin(Math.PI * u) * (1 - u);
         }
       }
+      slamElapsed++;
+      // 結算得分顯示時機：相乘演繹開始後 resultDelay 就跳出結算面板，跳出即開始跑分。
+      // 這一回合要報大獎的話不出面板，改在大獎畫面跑分 [使用者 2026-08-28]
+      if (slamResult) resultT++;               // 先累加，面板誕生那一幀停在 resultT=0（＝相乘前的得分）
+      if (!slamResult && slamElapsed >= F_RESULTDELAY && !bigWinDueThisRound()) startScoreRun();
       if (stateTimer >= F_MULTSLAM) {
         if (!slamHit) onSlamHit();       // 時長被調成 0 也要保證碰撞事件發生過
         slamK = 1;
-        currentState = STATE.POST_HOLD; stateTimer = 0;
+        if (bigWinDueThisRound()) goHold(F_BIGWINPRE, null, startBigWin);   // 大獎前停頓
+        else { currentState = STATE.POST_HOLD; stateTimer = 0; }
       }
       break;
 
@@ -2041,19 +2299,22 @@ function update() {
     case STATE.POST_HOLD:
       stateTimer++;
       slamK = 1;
-      if (stateTimer >= (F_POST[winTier] || 0)) {
-        // 這回合達到大獎條件 → 不出中央面板，直接進大獎畫面跑分 [使用者 2026-08-28]
-        if (bigWinDueThisRound()) startBigWin();
-        else startScoreRun();
-      }
+      slamElapsed++;
+      if (slamResult) resultT++;
+      if (!slamResult && slamElapsed >= F_RESULTDELAY) startScoreRun();   // 顯示時機比相乘演繹晚時
+      if (stateTimer >= (F_POST[winTier] || 0)) { currentState = STATE.SCORE_RUN; stateTimer = 0; }
       break;
 
     // 得分數字演繹：這段只驅動盤面中央的數字（跑不跑分見 CENTER_RUN_MODES）。
     // 下方公版的累積分數不跑分，等這一回合演完才直接切換 [使用者 2026-08-28]。
+    // 跑分：面板已經在跑（resultT 從面板出現那一刻起算），跑完接【結算得分顯示時長】
     case STATE.SCORE_RUN:
       stateTimer++;
+      slamElapsed++;
       slamK = 1;
-      if (stateTimer >= F_SCOREAPPEAR) {
+      if (slamResult) resultT++;
+      if (!slamResult && slamElapsed >= F_RESULTDELAY) startScoreRun();
+      if (!slamResult || resultT >= (slamResult.runFrames || 0)) {
         currentState = STATE.SCORE_HOLD; stateTimer = 0;
       }
       break;
@@ -2061,6 +2322,7 @@ function update() {
     // 分數停留 [§節奏表 D9]，尾段接【復原演繹】：兩個相靠近的欄位往左右回到原先的位置 [§美術 H48]
     case STATE.SCORE_HOLD:
       stateTimer++;
+      if (slamResult) resultT++;
       {
         const rest = stateTimer - F_SCOREHOLD;
         if (rest <= 0) slamK = 1;
@@ -2081,7 +2343,7 @@ function update() {
       if (stateTimer === 1) {
         startMult = Math.min(ODDS.maxStartMult, startMult * 2);
         boostK = 0; boostHit = false; boostChevrons = [];
-        shakeAmp = Math.max(shakeAmp, FX.shake1);   // ①集氣：畫面微弱震動 [§美術 H12①]
+        startShake(FX.shake1, F_SHAKET[1] || 0);    // ①集氣：畫面微弱震動 [§美術 H12①]
       }
       // 盤面的【起始倍數加倍演繹】[§美術 H12]：集氣 → 聚集重疊向上撞擊 → 雙箭頭光效 → 回原位
       {
@@ -2132,7 +2394,7 @@ function update() {
         fgPending = false;
         // SFG：以已累積 5 張功能卡的狀態進入 [§FREE GAME E31]
         if (isSFG) features = rollFeatures(MAX_FEAT);
-        currentState = STATE.IDLE; stateTimer = 0;
+        goHold(F_FGENTERPOST, null, goIdleNow);   // 轉場後停頓 → FG 第一局立刻啟動 [工作表]
       }
       break;
 
@@ -2141,7 +2403,19 @@ function update() {
       if (stateTimer >= F_FGENTER) {
         inFG = false; isSFG = false;
         startMult = 1; freeCount = 0;
-        currentState = STATE.IDLE; stateTimer = 0;
+        goHold(F_FGBACKPOST, null, goIdleNow);    // 回NG後停頓 → 下一局立刻啟動 [工作表]
+      }
+      break;
+
+    // 通用停頓（工作表上的各種「XX前/後停頓」）
+    case STATE.HOLD:
+      stateTimer++;
+      if (slamResult) resultT++;
+      if (stateTimer >= holdFrames) {
+        const fn = holdThen, nx = holdNext;
+        holdThen = null; holdNext = null;
+        if (fn) fn();
+        else { currentState = (nx === null ? STATE.IDLE : nx); stateTimer = 0; }
       }
       break;
 
@@ -2465,7 +2739,8 @@ function drawFeatureRow() {
   for (let i = 0; i < MAX_FEAT; i++) {
     const x = o.x + i * slotW + 6, y = o.y, w = slotW - 12, h = o.h;
     const f = features[i];
-    if (!f) {
+    // 功能卡逐張登場 [工作表：滾輪啟動至首張登場／登場間隔／高倍登場後停頓]
+    if (!f || !featShown(f)) {
       // 未啟動＝半透明無彩度 [§美術需求說明 E20]
       roundRect(x, y, w, h, 12, 'rgba(30,41,59,.45)', 'rgba(100,116,139,.5)', 1.5);
       continue;
@@ -2475,6 +2750,13 @@ function drawFeatureRow() {
     const hit = featIsHit(i);
     const breath = 0.75 + 0.25 * Math.sin(now / Math.max(100, FX.featBreath));
     ctx.save();
+    // 登場的頭 8 幀做一個彈出，看得出是「逐張登場」
+    const ent = f.enterFrame > 0 ? Math.min(1, (spinElapsed - f.enterFrame) / 8) : 1;
+    if (ent < 1) {
+      const sc = 0.6 + 0.4 * ent;
+      ctx.globalAlpha = Math.max(0, ent);
+      ctx.translate(x + w / 2, y + h / 2); ctx.scale(sc, sc); ctx.translate(-(x + w / 2), -(y + h / 2));
+    }
     if (hit || f.flash > 0) {
       ctx.shadowColor = CAT_GLOW[t.cat] || t.color;
       ctx.shadowBlur = FX.featGlow * (f.flash > 0 ? 1 : breath);
@@ -2565,13 +2847,10 @@ function drawSlamRings(cx, cy) {
  * 抽成函式讓驗證腳本走真正的判定路徑。 */
 function slamResultValue() {
   if (!slamResult) return 0;
-  if (!slamResult.run) return slamResult.score;
-  if (currentState === STATE.SCORE_RUN) {
-    // 第 0 幀就已經在跑（面板出現＝開始跑），跑完停在最終得分
-    const rk = Math.min(1, stateTimer / Math.max(1, F_SCOREAPPEAR));
-    return slamResult.base + (slamResult.score - slamResult.base) * rk;
-  }
-  return slamResult.score;
+  if (!slamResult.run || !slamResult.runFrames) return slamResult.score;
+  // 第 0 幀就已經在跑（面板出現＝開始跑），跑完停在最終得分
+  const rk = Math.min(1, resultT / slamResult.runFrames);
+  return slamResult.base + (slamResult.score - slamResult.base) * rk;
 }
 
 function drawSlamResult() {
@@ -2634,7 +2913,8 @@ function slamShift() {
 function inSettleNow() {
   return currentState === STATE.FEAT_APPLY || currentState === STATE.PRE_HOLD
     || currentState === STATE.MULT_SLAM || currentState === STATE.SCORE_RUN
-    || currentState === STATE.POST_HOLD || currentState === STATE.SCORE_HOLD;
+    || currentState === STATE.POST_HOLD || currentState === STATE.SCORE_HOLD
+    || (currentState === STATE.HOLD && slamHit);   // 大獎前停頓等，仍在結算階段
 }
 /* 左上「得分」欄要顯示的數字 [使用者 2026-08-28 拍板]：
  *   只有「這一回合的賠率贏分 ＋ 功能卡加上去的贏分」（＝scoreNow()，含加得分／乘得分卡，
@@ -3153,7 +3433,7 @@ document.getElementById('infoTitle').textContent = GAME_NAME;
  * 區塊 7：調校面板（換遊戲原則上不用動）
  * ========================================================== */
 const TUNE_KEY = 'crescendo_tuning';
-const TUNE_VERSION = 8;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
+const TUNE_VERSION = 9;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
 let tunePanelOpen = false, tuneTab = 'timing';
 let layoutSelected = null, layoutDrag = null;
 let layoutFieldRefs = {}, layoutRangeRefs = {};
@@ -3176,6 +3456,7 @@ function saveTuning() {
   try {
     localStorage.setItem(TUNE_KEY, JSON.stringify({
       version: TUNE_VERSION, timing: TIMING_AUTO, timingTurbo: TIMING_TURBO,
+      timingTurbo2: TIMING_TURBO2,
       speedMode: SPEED_MODE, centerRun: CENTER_RUN_MODE, timeline: TIMING_START,
       layout: LAYOUT, fx: FX, odds: ODDS, choice: CHOICE,
     }));
@@ -3196,8 +3477,9 @@ function loadTuning() {
       localStorage.removeItem(TUNE_KEY);
       // 版本不符（或沒有保存值）→ 一律回到 DEFAULT。
       // 不重設的話，執行期呼叫（storage 事件／另一分頁是舊版程式）會讓舊值留在物件上。
-      TIMING_AUTO  = Object.assign({}, DEFAULT_TIMING);
-      TIMING_TURBO = Object.assign({}, DEFAULT_TIMING_TURBO);
+      TIMING_AUTO   = Object.assign({}, DEFAULT_TIMING);
+      TIMING_TURBO  = Object.assign({}, DEFAULT_TIMING_TURBO);
+      TIMING_TURBO2 = Object.assign({}, DEFAULT_TIMING_TURBO2);
       setSpeedMode('auto');
       CENTER_RUN_MODE = 'xc';
       TIMING_START = Object.assign({}, DEFAULT_TIMING_START);
@@ -3207,8 +3489,9 @@ function loadTuning() {
       CHOICE       = Object.assign({}, DEFAULT_CHOICE);
     }
     else {
-      clampInto(TIMING_AUTO,  DEFAULT_TIMING,       d.timing,      TIMING_RANGE, [0, 5]);
-      clampInto(TIMING_TURBO, DEFAULT_TIMING_TURBO, d.timingTurbo, TIMING_RANGE, [0, 5]);
+      clampInto(TIMING_AUTO,   DEFAULT_TIMING,        d.timing,       TIMING_RANGE, [0, 5]);
+      clampInto(TIMING_TURBO,  DEFAULT_TIMING_TURBO,  d.timingTurbo,  TIMING_RANGE, [0, 5]);
+      clampInto(TIMING_TURBO2, DEFAULT_TIMING_TURBO2, d.timingTurbo2, TIMING_RANGE, [0, 5]);
       setSpeedMode(d.speedMode);
       if (CENTER_RUN_MODES.some(m => m[0] === d.centerRun)) CENTER_RUN_MODE = d.centerRun;
       clampInto(FX,     DEFAULT_FX,     d.fx,     FX_RANGE,     [0, 100]);
@@ -3379,7 +3662,7 @@ function buildTimingTab() {
   const swLab = document.createElement('span');
   swLab.textContent = '編輯中的速度模式：';
   sw.appendChild(swLab);
-  [['auto', 'AUTO（一般）'], ['turbo', 'TURBO（快速）']].forEach(m => {
+  [['auto', 'AUTO（一般）'], ['turbo', 'TURBO（快速）'], ['turbo2', 'TURBO2（最快）']].forEach(m => {
     const b = document.createElement('button');
     b.textContent = m[1];
     b.style.cssText = 'padding:3px 10px;border-radius:6px;cursor:pointer;font-size:12px;border:1px solid '
@@ -3436,6 +3719,13 @@ function buildTimingTab() {
     h.className = 'tune-group'; h.textContent = g.group;
     tuneBody.appendChild(h);
     const box = document.createElement('div'); box.className = 'gantt-editor';
+    // 「震動／拉近」那組同時列出幅度（值存在 FX，跟【特效】分頁是同一份）
+    if (g.group.indexOf('震動') >= 0) {
+      TIMING_TAB_FX.forEach(it => {
+        const rg = FX_RANGE[it[0]];
+        tuneBody.appendChild(buildNumberRow(FX, it[0], it[1], rg[0], rg[1], rg[2], setFxValue));
+      });
+    }
     let tmax = 1;
     g.items.forEach(it => { tmax = Math.max(tmax, TS(it[0]) + TIMING[it[0]]); });
     tmax = Math.ceil(tmax * 1.15 * 20) / 20;
@@ -3589,8 +3879,9 @@ document.getElementById('tuneApplySpin').addEventListener('click', () => {
   }
 });
 document.getElementById('tuneReset').addEventListener('click', () => {
-  TIMING_AUTO  = Object.assign({}, DEFAULT_TIMING);
-  TIMING_TURBO = Object.assign({}, DEFAULT_TIMING_TURBO);
+  TIMING_AUTO   = Object.assign({}, DEFAULT_TIMING);
+  TIMING_TURBO  = Object.assign({}, DEFAULT_TIMING_TURBO);
+  TIMING_TURBO2 = Object.assign({}, DEFAULT_TIMING_TURBO2);
   setSpeedMode(SPEED_MODE);       // 重新指向重建後的那一份
   CENTER_RUN_MODE = 'xc';
   TIMING_START = Object.assign({}, DEFAULT_TIMING_START);
@@ -3612,7 +3903,8 @@ document.getElementById('tuneExport').addEventListener('click', () => {
   const text = JSON.stringify({
     game: GAME_NAME, build: APP_BUILD, version: TUNE_VERSION,
     center_score_run: CENTER_RUN_MODE,
-    timing_seconds: TIMING, timeline_start_seconds: TIMING_START,
+    timing_seconds: TIMING, timing_auto: TIMING_AUTO, timing_turbo: TIMING_TURBO,
+    timing_turbo2: TIMING_TURBO2, timeline_start_seconds: TIMING_START,
     layout_px: LAYOUT, fx: FX, odds: ODDS, choice: CHOICE,
   }, null, 2);
   const done = ok => setTuneStatus(ok ? '設定已複製到剪貼簿 ✓' : '已開啟複製視窗', ok ? 'ok' : 'wait');
@@ -3979,12 +4271,12 @@ function rhythmTimeline(T, kind, tier) {
     segs.push({ t0: t, dur: lift, text: '得分牌抬起(' + R1(lift) + 's)', fill: 'line' });
     t += Math.max(T.cardLock, lift);
 
-    // 功能卡由左至右逐張觸發 [§一般遊戲 D53]
-    const featDur = T.featTrigger * RHYTHM_FEAT_CARDS;
+    // 功能卡由左至右逐張觸發 [§一般遊戲 D53]：首張等 featFirstGap，之後每張 featNextGap [工作表]
+    const featDur = T.featFirstGap + T.featNextGap * (RHYTHM_FEAT_CARDS - 1) + T.featTrigger;
     segs.push({ t0: t, dur: featDur,
       text: '功能卡逐張觸發(' + R1(featDur) + 's／' + RHYTHM_FEAT_CARDS + '張)', fill: 'symbol' });
     for (let i = 0; i < RHYTHM_FEAT_CARDS; i++) {
-      marks.push({ t: t + T.featTrigger * i, text: '第' + (i + 1) + '張功能卡' });
+      marks.push({ t: t + T.featFirstGap + T.featNextGap * i, text: '第' + (i + 1) + '張功能卡' });
     }
     t += featDur;
 
@@ -3994,19 +4286,28 @@ function rhythmTimeline(T, kind, tier) {
     t += pre;
 
     // 【得分相乘演繹】兩欄往中間碰撞 [§美術 H47]
+    const slamT0 = t;
     segs.push({ t0: t, dur: T.multSlam, text: '得分相乘演繹(' + R1(T.multSlam) + 's)', fill: 'big' });
     marks.push({ t: t + T.multSlam * 0.55, text: '兩欄碰撞(震動)' });
+    marks.push({ t: t, text: '震動' + R1(T.shakeTime1) + 's／拉近' + R1(T.zoomTime1) + 's(1階)' });
     t += T.multSlam;
 
-    // 相乘演繹後、跑分前停留 [§高倍得分層級設計 F5]
-    segs.push({ t0: t, dur: post, text: '跑分前停留(' + R1(post) + 's)', fill: 'pause' });
-    t += post;
+    // 相乘演繹後、跑分前停留 [§層級 F5]（工作表改用「結算得分顯示時機」表達，預設 0）
+    if (post > 0) {
+      segs.push({ t0: t, dur: post, text: '跑分前停留(' + R1(post) + 's)', fill: 'pause' });
+      t += post;
+    }
     skips.push(t);
+    // 結算得分顯示時機：從相乘演繹開始起算，時間到就跳出結算得分並開始跑分 [工作表]
+    const resultAt = slamT0 + T.resultDelay;
 
     /* 跑分 → 停留 → 復原演繹 [§節奏表 D8/D9]＋[§美術 H48]
      * 使用者 2026-08-28：面板（中央得分數字／大獎）**一出現就是在跑的狀態**，
      * 跑分本身沒有前置停頓；達到大獎條件的那一回合不出中央面板，直接在大獎畫面跑分。 */
     if (g === bigAt) {
+      // 大獎前停頓 → 大獎畫面（一出現就跑分）→ 報獎停留 [工作表]
+      segs.push({ t0: t, dur: T.bigWinPre, text: '大獎前停頓(' + R1(T.bigWinPre) + 's)', fill: 'pause' });
+      t += T.bigWinPre;
       segs.push({ t0: t, dur: T.scoreAppear,
         text: '大獎跑分(' + R1(T.scoreAppear) + 's)', fill: 'big' });
       marks.push({ t: t, text: '第' + (g + 1) + '回合達標：大獎面板出現即跑分' });
@@ -4015,15 +4316,21 @@ function rhythmTimeline(T, kind, tier) {
         text: '大獎報獎停留(' + R1(T.bigWinHold) + 's)', fill: 'big' });
       t += T.bigWinHold;
       notes.push('大獎（≥' + FX.bigWinRatio + '倍）在「達標的那一回合」就報，不等連爆結束；'
-        + '該回合不出中央的得分數字面板，直接在大獎畫面上跑分（面板一出現就在跑）。'
+        + '該回合不出中央的結算得分面板，直接在大獎畫面上跑分（面板一出現就在跑）。'
         + '同一局只往上升階，不重複報。大獎跳過立刻分數呈現最終。');
     } else {
-      segs.push({ t0: t, dur: T.scoreAppear,
-        text: '得分數字跑分(' + R1(T.scoreAppear) + 's)', fill: 'score' });
-      marks.push({ t: t, text: '中央得分面板出現即跑分' });
-      t += T.scoreAppear;
+      // 結算得分跑分時長依級距（工作表：10≦贏分<20 → scoreRun1、20 倍以上 → scoreRun2；
+      // 未達 10 倍不跑分，只顯示 scoreHold）
+      const lo = tier ? tier[0] : 0;
+      const runDur = lo < 10 ? 0 : (lo < 20 ? T.scoreRun1 : T.scoreRun2);
+      segs.push({ t0: resultAt, dur: Math.max(0.05, runDur),
+        text: runDur > 0 ? '結算得分跑分(' + R1(runDur) + 's)' : '結算得分(不跑分，直接顯示)',
+        fill: 'score' });
+      marks.push({ t: resultAt, text: '結算得分跳出(顯示時機 ' + R1(T.resultDelay) + 's)＋即開始跑分' });
+      t = Math.max(t, resultAt + runDur);
     }
-    segs.push({ t0: t, dur: T.scoreHold, text: '停留(' + R1(T.scoreHold) + 's)', fill: 'scoreHold' });
+    segs.push({ t0: t, dur: T.scoreHold,
+      text: '結算得分顯示時長(' + R1(T.scoreHold) + 's)', fill: 'scoreHold' });
     t += T.scoreHold;
     segs.push({ t0: t, dur: T.slamRestore, text: '復原演繹(' + R1(T.slamRestore) + 's)', fill: 'score' });
     t += T.slamRestore;
@@ -4041,7 +4348,7 @@ function rhythmTimeline(T, kind, tier) {
       segs.push({ t0: t, dur: T.respinPause,
         text: '重轉前停頓(' + R1(T.respinPause) + 's)', fill: 'pause' });
       t += T.respinPause;
-      const respin = T.reelStart + T.landBounce;
+      const respin = T.respinReelStart + T.landBounce;
       segs.push({ t0: t, dur: respin, text: '重轉滾動(' + R1(respin) + 's)', fill: 'lineEnd' });
       marks.push({ t: t, text: '重轉(鎖定得分牌)' });
       skips.push(t);
@@ -4130,16 +4437,19 @@ function sheetGantt() {
 /* --- 分頁二：工具參數表 --- */
 function sheetToolParams() {
   const sh = newSheet('工具參數表', [9, 16.5]);
-  sh.cols.push([1, 1, 35.625], [2, 2, 11.125], [3, 3, 68], [4, 5, 9]);
+  sh.cols.push([1, 1, 35.625], [2, 2, 11.125], [3, 3, 68], [4, 6, 9], [7, 7, 18]);
   putRow(sh, 1, 1, ['參數名稱', '數值範圍', '說明'], XF.tblCell);
-  putRow(sh, 1, 4, ['AUTO', 'TURBO'], XF.tblNum);
+  putRow(sh, 1, 4, ['AUTO', 'TURBO', 'TURBO2'], XF.tblNum);
+  put(sh, 1, 7, '備註', XF.tblCell);
   let r = 2;
   RHYTHM_MAP.forEach(m => {
-    const key = m[0], fixed = m[4];
-    const a = key ? R1(TIMING_AUTO[key]) : (fixed !== undefined ? fixed : '');
-    const b = key ? R1(TIMING_TURBO[key]) : (fixed !== undefined ? fixed : '');
+    const key = m[0], note = m[5];
+    if (key === '#') { put(sh, r++, 1, m[1], XF.tblCell); return; }   // 分組標題列
+    const fixed = (typeof m[4] === 'function') ? m[4]() : m[4];
+    const val = t => key ? R1(t[key]) : (fixed !== undefined ? fixed : '');
     putRow(sh, r, 1, [m[1], '0.00~99.00', m[2]], XF.tblCell);
-    putRow(sh, r, 4, [a, b], XF.tblNum);
+    putRow(sh, r, 4, [val(TIMING_AUTO), val(TIMING_TURBO), val(TIMING_TURBO2)], XF.tblNum);
+    if (note) put(sh, r, 7, note, XF.tblCell);
     r++;
   });
   r++;

@@ -297,12 +297,12 @@ function run() {
 
   /* ===== 8. 節奏參數真的接上（拉極端值看演出長度變化）===== */
   NOTE('8. 節奏參數接線（端對端）');
-  function countState(target, apply) {
+  function countState(target, apply, force) {
     reset();
     ODDS.maxRound = 1;          // 固定單回合，排除「連爆回合數隨機」造成的雜訊
     ODDS.wToWild = 0;           // 「轉換WILD」卡會改牌型 → 偶發沒中獎、整段演繹不跑（間歇性失敗）
     apply(); applyTuning();
-    forceSpinType = 'pair';     // 一對＝0.1×100＝10，ratio 0.1 → 必定是 1 階
+    forceSpinType = force || 'pair';   // 一對＝0.1×100＝10，ratio 0.1 → 必定是 1 階
     var c = 0, n = 0;
     startSpin();
     while (n < 400000) {
@@ -318,9 +318,14 @@ function run() {
   var wh1 = countState(STATE.SHOWING_WIN, function () { TIMING.winHold = 0.1; TIMING.cardLock = 0.1; });
   var wh2 = countState(STATE.SHOWING_WIN, function () { TIMING.winHold = 3.0; TIMING.cardLock = 1.0; });
   T('拉長「停輪後中獎停頓」→ SHOWING_WIN 幀數變多', wh2 > wh1 * 2, wh1 + ' → ' + wh2);
-  var sr1 = countState(STATE.SCORE_RUN, function () { TIMING.scoreAppear = 0.1; });
-  var sr2 = countState(STATE.SCORE_RUN, function () { TIMING.scoreAppear = 4.0; });
-  T('拉長「中獎後出現分數」→ SCORE_RUN 幀數變多', sr2 > sr1 * 2, sr1 + ' → ' + sr2);
+  // 跑分時長現在依工作表分段（scoreRun1/2），而且要落在會跑分的級距才看得到差別，
+  // 所以用強開的「跑分 10倍」情境（demoRun）而不是一對（0.1 倍，不跑分）
+  var sr1 = countState(STATE.SCORE_RUN, function () { TIMING.scoreRun1 = 0.5; }, 'demoRun');
+  var sr2 = countState(STATE.SCORE_RUN, function () { TIMING.scoreRun1 = 4.0; }, 'demoRun');
+  T('拉長「結算得分跑分時長」→ SCORE_RUN 幀數變多', sr2 > sr1 * 2, sr1 + ' → ' + sr2);
+  var ms1 = countState(STATE.MULT_SLAM, function () { TIMING.multSlam = 0.5; }, 'demoRun');
+  var ms2 = countState(STATE.MULT_SLAM, function () { TIMING.multSlam = 2.0; }, 'demoRun');
+  T('拉長「得分相乘演繹」→ MULT_SLAM 幀數變多', ms2 > ms1 * 2, ms1 + ' → ' + ms2);
   var ph1 = countState(STATE.PRE_HOLD, function () { TIMING.preHold1 = 0.05; });
   var ph2 = countState(STATE.PRE_HOLD, function () { TIMING.preHold1 = 3.0; });
   T('拉長「1階演繹前停留」→ PRE_HOLD 幀數變多', ph2 > ph1 * 2, ph1 + ' → ' + ph2);
@@ -392,7 +397,7 @@ function run() {
   /* ===== 10b. 得分牌抬起（出牌感）與功能卡命中箭頭 ===== */
   NOTE('10b. 抬起與箭頭');
   reset();
-  T('TUNE_VERSION 已升版（DEFAULT 結構有變）', TUNE_VERSION === 8, TUNE_VERSION);
+  T('TUNE_VERSION 已升版（DEFAULT 結構有變）', TUNE_VERSION === 9, TUNE_VERSION);
 
   // --- 哪張牌命中哪張功能卡 ---
   var T_RANK2 = 0, T_SUIT_H = 14, T_FACE = 17;   // TIERS: 0~12 點數 / 13~16 ♠♥♦♣ / 17 人頭
@@ -697,7 +702,7 @@ function run() {
     ODDS.payMul = payMul; CENTER_RUN_MODE = mode;
     var boxVals = [], centerVals = [], panelVals = [], holdVals = [], n = 0;
     var flag = null, rw = 0, base = 0, ratio = 0, afterPanel = null, prevState = -1;
-    var earlyPanel = false;
+    var earlyPanel = false, panelAt = -1, panelFirst = null, panelVals2 = [];
     startSpin();
     // 兩者都要在 startSpin 之後設：startSpin 會重置起始倍數並重抽功能卡。
     // 清掉功能卡＝倍數與賠付都可預測；起始倍數 >1 才會讓「相乘前的得分 base」與「最終得分」不同，
@@ -708,17 +713,18 @@ function run() {
       if (slamResult && flag === null) {
         flag = slamResult.run; rw = slamResult.score; base = slamResult.base;
         ratio = rw / Math.max(1, ODDS.bet);
+        panelAt = slamElapsed;               // 面板是在相乘演繹開始後第幾幀跳出來的
+        panelFirst = slamResultValue();      // 出現那一幀的數字
       }
+      if (slamResult) panelVals2.push(slamResultValue());
       if (currentState === STATE.SCORE_RUN) {
         boxVals.push(scoreBoxValue());
         centerVals.push(slamResultValue());
         panelVals.push(displayScore);        // 下方公版 WIN 用的就是這個值
       }
       if (currentState === STATE.SCORE_HOLD && slamResult) holdVals.push(slamResultValue());
-      // 面板不該在碰撞／跑分前停留期間就先跳出來停著
-      if ((currentState === STATE.MULT_SLAM || currentState === STATE.POST_HOLD) && slamResult) {
-        earlyPanel = true;
-      }
+      // 面板不該在「結算得分顯示時機」之前就出現
+      if (slamResult && slamElapsed < F_RESULTDELAY) earlyPanel = true;
       // 這一回合的演繹結束（復原演繹跑完 → afterScore）之後，公版該切換到累計分數
       if (afterPanel === null && prevState === STATE.SCORE_HOLD && currentState !== STATE.SCORE_HOLD) {
         afterPanel = displayScore;
@@ -729,6 +735,7 @@ function run() {
     ODDS.payMul = DEFAULT_ODDS.payMul;
     return { box: boxVals, center: centerVals, panel: panelVals, hold: holdVals,
              afterPanel: afterPanel, spinWin: spinWin, earlyPanel: earlyPanel,
+             panelAt: panelAt, panelFirst: panelFirst, all: panelVals2,
              run: flag, win: rw, base: base, ratio: ratio, roundWin: rw };
   }
   function allSame(a) { return a.length > 0 && a.every(function (v) { return v === a[0]; }); }
@@ -739,7 +746,7 @@ function run() {
   T('10i 低倍：base 與最終得分不同（否則下面那條會假綠）',
     lo.base !== lo.win, 'base=' + lo.base + ' win=' + lo.win);
   T('10i 低倍：中央數字整段不變（直接顯示最終得分，沒有從 base 跑上來）',
-    allSame(lo.center) && lo.center[0] === lo.win, lo.center[0] + ' vs ' + lo.win);
+    allSame(lo.all) && lo.all[0] === lo.win, lo.all[0] + ' vs ' + lo.win);
   T('10i 低倍：得分欄＝本回合得分（不含倍數、不跑分）',
     allSame(lo.box) && lo.box[0] === lo.base, lo.box[0] + ' vs base=' + lo.base);
   T('10i 低倍：得分欄不會變成相乘後的分數', lo.box[0] !== lo.roundWin,
@@ -755,15 +762,16 @@ function run() {
   T('10i 高倍：倍數落在 10～25 倍之間（跑分但不是大獎）',
     hi.ratio >= 10 && hi.ratio < FX.bigWinRatio, 'ratio=' + hi.ratio.toFixed(2));
   T('10i 高倍：中央判定為跑分', hi.run === true, 'ratio=' + hi.ratio.toFixed(2));
-  T('10i 高倍：中央數字從相乘前的得分起跑',
-    Math.abs(hi.center[0] - hi.base) < Math.max(1, hi.base * 0.05),
-    hi.center[0] + ' 起跑，base=' + hi.base);
-  // 使用者 2026-08-28：面板一出來就要是在跑的狀態，不能先跳出來停著等停頓
-  T('10i 高倍：面板沒有在碰撞／跑分前停留期間就先出現', hi.earlyPanel === false);
-  T('10i 高倍：面板第一幀就已經在跑（第 2 幀就比第 1 幀大）',
-    hi.center.length > 1 && hi.center[1] > hi.center[0],
-    hi.center[0] + ' → ' + hi.center[1]);
-  T('10i 低倍：面板同樣不提前出現（不跑分也是跑分那一刻才出現）', lo.earlyPanel === false);
+  // 工作表：結算得分在「相乘演繹開始後 resultDelay」跳出，跳出即開始跑分
+  T('10i 高倍：面板在相乘演繹開始後 resultDelay 才出現',
+    hi.panelAt === F_RESULTDELAY, '第 ' + hi.panelAt + ' 幀出現，resultDelay=' + F_RESULTDELAY + ' 幀');
+  T('10i 高倍：面板出現前不存在（沒有提早跳出來停著）', hi.earlyPanel === false);
+  T('10i 高倍：面板出現那一幀的數字＝相乘前的得分（從這裡開始跑）',
+    Math.abs(hi.panelFirst - hi.base) < 1e-6, hi.panelFirst + ' vs base=' + hi.base);
+  T('10i 高倍：面板第一幀之後就在往上跑',
+    hi.all.length > 1 && hi.all[1] > hi.all[0], hi.all[0] + ' → ' + hi.all[1]);
+  T('10i 低倍：面板同樣是 resultDelay 才出現', lo.panelAt === F_RESULTDELAY && !lo.earlyPanel,
+    '第 ' + lo.panelAt + ' 幀')
   T('10i 高倍：跑分尾端已經逼近最終得分（最後一幀在 SCORE_HOLD 才到位）',
     hi.center[hi.center.length - 1] >= hi.win * 0.95,
     hi.center[hi.center.length - 1] + ' vs ' + hi.win);
@@ -771,8 +779,8 @@ function run() {
     hi.hold.length > 0 && hi.hold.every(function (v) { return v === hi.win; }),
     hi.hold[0] + ' vs ' + hi.win);
   T('10i 高倍：中央數字是遞增的（真的在跑）',
-    hi.center.length > 1 && hi.center[hi.center.length - 1] > hi.center[0]
-    && hi.center.every(function (v, i) { return i === 0 || v >= hi.center[i - 1]; }));
+    hi.all.length > 1 && hi.all[hi.all.length - 1] > hi.all[0]
+    && hi.all.every(function (v, i) { return i === 0 || v >= hi.all[i - 1]; }));
   // 這兩條是關鍵：中央在跑，另外兩欄「不該變的沒變」
   T('10i 高倍：中央在跑分，得分欄仍是本回合得分且整段不動',
     allSame(hi.box) && hi.box[0] === hi.base, hi.box[0] + ' vs base=' + hi.base);
@@ -808,17 +816,18 @@ function run() {
     ODDS.payMul = payMul;
     var n = 0, prev = -1, roundsDone = 0, bigAtRound = -1, bigLabels = [];
     var winAtBig = -1, spinEnded = false, bigCount = 0;
-    var bigVals = [], panelDuringBig = false, prevOfBig = -1, afterPost = -1;
+    var bigVals = [], panelDuringBig = false, prevOfBig = -1, afterPost = -1, holdFrames = 0;
     startSpin();
     startMult = sm || 1; features = [];
     while (n < 200000) {
       update(); n++;
       // 每次離開 SCORE_HOLD 就是一個回合的得分演繹演完了
       if (prev === STATE.SCORE_HOLD && currentState !== STATE.SCORE_HOLD) roundsDone++;
-      // 跑分前停留的下一個狀態是什麼（大獎 or 中央面板）
-      if (prev === STATE.POST_HOLD && currentState !== STATE.POST_HOLD && afterPost < 0) {
+      // 相乘演繹之後接到哪一個狀態（大獎前停頓 or 跑分前停留）
+      if (prev === STATE.MULT_SLAM && currentState !== STATE.MULT_SLAM && afterPost < 0) {
         afterPost = currentState;
       }
+      if (currentState === STATE.HOLD && bigAtRound < 0) holdFrames++;
       if (prev !== STATE.BIGWIN && currentState === STATE.BIGWIN) {
         bigCount++;
         bigLabels.push(bigWinLabel);
@@ -835,7 +844,7 @@ function run() {
     return { rounds: roundsDone, bigAtRound: bigAtRound, labels: bigLabels, count: bigCount,
              winAtBig: winAtBig, spinWin: spinWin, ended: spinEnded, steps: n,
              bigVals: bigVals, panelDuringBig: panelDuringBig, prevOfBig: prevOfBig,
-             afterPost: afterPost };
+             afterPost: afterPost, holdFrames: holdFrames };
   }
 
   // 皇家同花順 ×5 賠率乘數 → 第 1 回合就遠超大獎門檻
@@ -851,9 +860,11 @@ function run() {
   T('10j 局末仍然回到待機', bw.ended === true);
 
   // 使用者 2026-08-28：達標那回合不出中央得分面板，直接在大獎畫面跑分，且一出現就在跑
-  T('10j 大獎接在「跑分前停留」之後（不是等中央面板演完）',
-    bw.prevOfBig === STATE.POST_HOLD && bw.afterPost === STATE.BIGWIN,
-    'prev=' + bw.prevOfBig + ' afterPost=' + bw.afterPost);
+  T('10j 大獎接在「大獎前停頓」之後（相乘演繹 → 大獎前停頓 → 大獎）',
+    bw.prevOfBig === STATE.HOLD && bw.afterPost === STATE.HOLD,
+    'prev=' + bw.prevOfBig + ' afterSlam=' + bw.afterPost + '（HOLD=' + STATE.HOLD + '）');
+  T('10j 大獎前停頓的長度＝bigWinPre',
+    Math.abs(bw.holdFrames - F_BIGWINPRE) <= 1, bw.holdFrames + ' vs ' + F_BIGWINPRE);
   T('10j 大獎期間不出現中央的得分數字面板', bw.panelDuringBig === false);
   T('10j 大獎畫面的數字第一幀就在跑（第 2 幀比第 1 幀大）',
     bw.bigVals.length > 1 && bw.bigVals[1] > bw.bigVals[0],
@@ -955,6 +966,161 @@ function run() {
     rep1.ratio === rep2.ratio && rep1.run === rep2.run, rep1.ratio + ' / ' + rep2.ratio);
   forceSpinType = null;
   reset();
+
+  /* ===== 10l. 節奏組工作表新增的參數，拉了要真的會動（使用者 2026-08-28）=====
+     來源＝《Crescendo節奏組工作表.xlsx》的「工具參數表」。每一項都用端對端跑一局，
+     比較「小值 vs 大值」下對應狀態的幀數，確認參數真的接上演出，不是只列在面板上。 */
+  NOTE('10l. 工作表新增參數的接線');
+  reset();
+
+  // 跑一局，回傳各狀態的幀數統計與幾個觀測值
+  // opt = { sm: 起始倍數（會順便清掉功能卡）, rounds: 單局回合上限, feat: 保留功能卡 }
+  function playCount(force, apply, opt) {
+    opt = opt || {};
+    reset(); ODDS.wToWild = 0; ODDS.maxRound = opt.rounds || 1;
+    if (apply) apply();
+    applyTuning();
+    forceSpinType = force;
+    var hist = {}, n = 0, panelAt = -1, featShownAt = -1;
+    startSpin();
+    if (opt.sm) { startMult = opt.sm; features = []; }
+    // opt.feat：塞 n 張「花色階」的加得分卡。強開鐵支的 4 張同點數牌花色各不同，
+    // 所以花色階一定命中 → 功能卡必定觸發，FEAT_APPLY 的幀數才可量、不會忽有忽無
+    if (opt.feat) {
+      features = [];
+      for (var fi = 0; fi < opt.feat; fi++) {
+        features.push({ type: FEAT_IDX.addScore, tier: 13 + (fi % 4), value: 1,
+                        triggered: false, flash: 0, enterFrame: 0 });
+      }
+    }
+    while (n < 300000) {
+      update(); n++;
+      hist[currentState] = (hist[currentState] || 0) + 1;
+      if (panelAt < 0 && slamResult) panelAt = slamElapsed;
+      if (featShownAt < 0 && features.length > 0 && featShown(features[0])) featShownAt = spinElapsed;
+      if (currentState === STATE.IDLE && !inFG) break;
+    }
+    forceSpinType = null;
+    return { hist: hist, steps: n, panelAt: panelAt, featShownAt: featShownAt };
+  }
+  function framesOf(force, key, val, state, opt) {
+    var r = playCount(force, function () { TIMING[key] = val; }, opt);
+    var v = r.hist[state] || 0;
+    TIMING[key] = DEFAULT_TIMING[key]; applyTuning();
+    return v;
+  }
+
+  // [參數, 強開情境, 觀測狀態, 小值, 大值, 選項]
+  //   買5張功能卡（buy5f）才有 FEAT_APPLY 可量；scoreRun2 要 20 倍以上的級距（鐵支5×起始倍數4）
+  var WIRED = [
+    ['freePre',     'free1',   STATE.HOLD,       0.1, 2.0, null],
+    ['bigWinPre',   'demoBig', STATE.HOLD,       0.1, 2.0, null],
+    ['featFirstGap','demoRun', STATE.FEAT_APPLY, 0.1, 2.0, { feat: 3 }],
+    ['featNextGap', 'demoRun', STATE.FEAT_APPLY, 0.1, 2.0, { feat: 3 }],
+    ['scoreRun1',   'demoRun', STATE.SCORE_RUN,  0.1, 4.0, null],
+    ['scoreRun2',   'demoRun', STATE.SCORE_RUN,  0.1, 4.0, { sm: 4 }],
+    ['scoreHold',   'demoRun', STATE.SCORE_HOLD, 0.1, 3.0, null],
+    ['multSlam',    'demoRun', STATE.MULT_SLAM,  0.3, 3.0, null],
+  ];
+  // 功能卡張數與是否觸發是隨機的 → 同一設定跑 5 次取最大值，避免抽到「沒有卡觸發」的局誤判
+  function framesMax(force, key, val, state, opt, tries) {
+    var best = 0;
+    for (var i = 0; i < (tries || 1); i++) best = Math.max(best, framesOf(force, key, val, state, opt));
+    return best;
+  }
+  WIRED.forEach(function (w) {
+    var a = framesMax(w[1], w[0], w[3], w[2], w[5], 1);
+    var b = framesMax(w[1], w[0], w[4], w[2], w[5], 1);
+    T('10l ' + w[0] + '：拉大 → 對應狀態幀數變多', b > a, a + ' → ' + b);
+  });
+  // WILD 轉換要靠隨機的「轉換WILD」卡才會發生，端對端不好穩定重現 →
+  // 這條只驗參數有算成幀數（實際跳轉在 onReelsStopped 的 WILD 分支走 goHold(F_WILDPRE, ...)）
+  TIMING.wildPre = 1.5; applyTuning();
+  T('10l wildPre：算成幀數（WILD轉換前停頓）', F_WILDPRE === TF(1.5), F_WILDPRE + ' vs ' + TF(1.5));
+  TIMING.wildPre = DEFAULT_TIMING.wildPre; applyTuning();
+
+  // 結算得分顯示時機：拉大 → 面板更晚才跳出來
+  var pd1 = playCount('demoRun', function () { TIMING.resultDelay = 0.1; TIMING.multSlam = 3.0; });
+  var pd2 = playCount('demoRun', function () { TIMING.resultDelay = 2.0; TIMING.multSlam = 3.0; });
+  TIMING.resultDelay = DEFAULT_TIMING.resultDelay; TIMING.multSlam = DEFAULT_TIMING.multSlam;
+  applyTuning();
+  T('10l resultDelay：拉大 → 結算得分更晚才跳出來',
+    pd2.panelAt > pd1.panelAt, pd1.panelAt + ' → ' + pd2.panelAt + ' 幀');
+
+  // 功能卡登場：拉大「滾輪啟動至首張功能卡登場間隔」→ 第一張更晚出現
+  var fe1 = playCount('buy5f', function () { TIMING.featEnterDelay = 0; }, { rounds: 1 });
+  var fe2 = playCount('buy5f', function () { TIMING.featEnterDelay = 1.5; }, { rounds: 1 });
+  TIMING.featEnterDelay = DEFAULT_TIMING.featEnterDelay; applyTuning();
+  T('10l featEnterDelay：拉大 → 首張功能卡更晚登場',
+    fe2.featShownAt > fe1.featShownAt, fe1.featShownAt + ' → ' + fe2.featShownAt + ' 幀');
+
+  // RESPIN滾輪啟動：只影響重轉，不影響第一次滾輪。
+  // 端對端量總幀數會被「隨機重轉幾回合」蓋過去（同一設定跑兩次差很多），所以直接驗停輪排程：
+  reset(); ODDS.wToWild = 0;
+  var allCols = [true, true, true, true, true];
+  beginReels(allCols, false);
+  var firstSpinFrame = colStopFrame[0];
+  beginReels(allCols, true);
+  var respinFrame = colStopFrame[0];
+  T('10l respinReelStart：重轉的第一輪停輪時間＝RESPIN滾輪啟動',
+    respinFrame === F_RESPINREEL, respinFrame + ' vs ' + F_RESPINREEL);
+  T('10l 第一次滾輪仍用「滾輪啟動」（沒被重轉那個值蓋掉）',
+    firstSpinFrame === TF(TIMING.reelStart), firstSpinFrame + ' vs ' + TF(TIMING.reelStart));
+  TIMING.respinReelStart = 3.0; applyTuning();
+  beginReels(allCols, true);
+  T('10l respinReelStart：拉大 → 重轉停輪時間跟著變',
+    colStopFrame[0] === TF(3.0), colStopFrame[0] + ' vs ' + TF(3.0));
+  // 真正走一局：重轉那一次的停輪排程要用到 RESPIN滾輪啟動（釘住 doRespin 的呼叫端有傳 isRespin）
+  reset(); ODDS.wToWild = 0; ODDS.maxRound = 3; forceSpinType = 'demoRun';
+  TIMING.respinReelStart = 3.0; applyTuning();   // 要在 reset() 之後設：reset 會把 TIMING 還原成預設
+  var seenRespinFrame = -1, n6 = 0;
+  startSpin();
+  while (n6 < 200000) {
+    update(); n6++;
+    if (seenRespinFrame < 0 && roundIdx >= 1 && currentState === STATE.SPINNING) {
+      // 重轉只有「沒中獎的欄」會轉（得分牌是鎖定的），所以要看第一個真的有轉的欄
+      for (var sc = 0; sc < COLS; sc++) {
+        if (spinCols[sc]) { seenRespinFrame = colStopFrame[sc]; break; }
+      }
+    }
+    if (currentState === STATE.IDLE && !inFG) break;
+  }
+  T('10l 實際重轉時用的是 RESPIN滾輪啟動（不是第一次滾輪的值）',
+    seenRespinFrame === TF(3.0), seenRespinFrame + ' vs ' + TF(3.0));
+  forceSpinType = null;
+  TIMING.respinReelStart = DEFAULT_TIMING.respinReelStart; applyTuning();
+  reset();
+
+  // 震動／拉近秒數：真的變成持續幀數
+  reset(); ODDS.wToWild = 0; ODDS.maxRound = 1; forceSpinType = 'demoBig';
+  TIMING.shakeTime1 = 1.5; TIMING.shakeTime2 = 1.5; TIMING.shakeTime3 = 1.5; applyTuning();
+  startSpin();
+  var maxShakeLeft = 0, maxZoomLeft = 0, n5 = 0;
+  while (n5 < 200000) {
+    update(); n5++;
+    maxShakeLeft = Math.max(maxShakeLeft, shakeLeft);
+    maxZoomLeft = Math.max(maxZoomLeft, zoomLeft);
+    if (currentState === STATE.IDLE && !inFG) break;
+  }
+  T('10l 震動秒數：震動的剩餘幀數用到了設定值', maxShakeLeft >= TF(1.5) - 1,
+    maxShakeLeft + ' vs ' + TF(1.5));
+  T('10l 拉近秒數：拉近的剩餘幀數用到了設定值', maxZoomLeft > 0, maxZoomLeft);
+  TIMING.shakeTime1 = DEFAULT_TIMING.shakeTime1;
+  TIMING.shakeTime2 = DEFAULT_TIMING.shakeTime2;
+  TIMING.shakeTime3 = DEFAULT_TIMING.shakeTime3;
+  forceSpinType = null; applyTuning(); reset();
+
+  // 面板：三組速度 + 幅度那幾列有列出來
+  T('10l 節奏面板有 AUTO/TURBO/TURBO2 三組',
+    ['auto', 'turbo', 'turbo2'].every(function (m) {
+      setSpeedMode(m);
+      return TIMING === (m === 'auto' ? TIMING_AUTO : m === 'turbo' ? TIMING_TURBO : TIMING_TURBO2);
+    }));
+  setSpeedMode('auto');
+  T('10l 震動／拉近幅度也列在節奏分頁', TIMING_TAB_FX.length === 5
+    && TIMING_TAB_FX.every(function (it) { return it[0] in DEFAULT_FX; }));
+  tuneTab = 'timing'; refreshTuneBody();
+  T('10l 節奏分頁建得起來（含新的分組）', tuneBody.children.length > 10, tuneBody.children.length);
 
   /* ===== 10e. 改色 + 盤面框燈條 + 起始倍數加倍撞擊（2026-08-27）===== */
   NOTE('10e. 改色與補做的演繹');
@@ -1137,7 +1303,11 @@ function run() {
   var kTurbo = Object.keys(DEFAULT_TIMING_TURBO).sort().join(',');
   T('10g AUTO / TURBO 兩組節奏的 key 完全一致', kAuto === kTurbo,
     'auto=' + Object.keys(DEFAULT_TIMING).length + ' turbo=' + Object.keys(DEFAULT_TIMING_TURBO).length);
-  var mapped = RHYTHM_MAP.filter(function (m) { return m[0]; }).map(function (m) { return m[0]; });
+  T('10g TURBO2（工作表第三欄）key 也一致',
+    Object.keys(DEFAULT_TIMING_TURBO2).sort().join(',') === kAuto,
+    'turbo2=' + Object.keys(DEFAULT_TIMING_TURBO2).length);
+  var mapped = RHYTHM_MAP.filter(function (m) { return m[0] && m[0] !== '#'; })
+                         .map(function (m) { return m[0]; });
   var missMap = Object.keys(DEFAULT_TIMING).filter(function (k) { return mapped.indexOf(k) < 0; });
   var strayMap = mapped.filter(function (k) { return !(k in DEFAULT_TIMING); });
   T('10g RHYTHM_MAP 涵蓋每一個 TIMING', missMap.length === 0, missMap.join(','));

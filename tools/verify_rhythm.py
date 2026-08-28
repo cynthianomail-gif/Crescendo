@@ -49,7 +49,9 @@ INJECT = u"""
     var ka = Object.keys(DEFAULT_TIMING).sort().join(',');
     var kt = Object.keys(DEFAULT_TIMING_TURBO).sort().join(',');
     ok('DEFAULT_TIMING / DEFAULT_TIMING_TURBO key 一致', ka === kt);
-    var mapped = RHYTHM_MAP.filter(function (m) { return m[0]; }).map(function (m) { return m[0]; });
+    // m[0] === '#' 是分組標題列（工具參數表本來就有『結算得分／得分層級／功能卡…』這種標題）
+    var mapped = RHYTHM_MAP.filter(function (m) { return m[0] && m[0] !== '#'; })
+                           .map(function (m) { return m[0]; });
     var missing = Object.keys(DEFAULT_TIMING).filter(function (k) { return mapped.indexOf(k) < 0; });
     var stray = mapped.filter(function (k) { return !(k in DEFAULT_TIMING); });
     ok('RHYTHM_MAP 涵蓋每個 TIMING', missing.length === 0, 'missing=' + missing.join(','));
