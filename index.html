@@ -248,7 +248,7 @@ canvas { display: block; width: 100%; height: 100%; }
  * 面板本身（區塊 7）原則上不用動。
  * ========================================================== */
 
-const APP_BUILD = 'crescendo-13';   // 驗證用識別值：測到的是不是最新版，看這個
+const APP_BUILD = 'crescendo-14';   // 驗證用識別值：測到的是不是最新版，看這個
 const GAME_NAME = 'Crescendo';
 
 const canvas = document.getElementById('gameCanvas');
@@ -1717,8 +1717,8 @@ const CENTER_RUN_XC_RATIO = 10;             // 星城門檻，對齊 RHYTHM_TIER
 // 大獎門檻可以在【數值】分頁被調到 10 倍以下，所以星城那條也要把大獎 OR 進去，不能只看 10 倍。
 const CENTER_RUN_MODES = [
   ['xc', '星城（10倍以上／大獎跑分）', r => r >= CENTER_RUN_XC_RATIO || r >= FX.bigWinRatio,
-         '星城（≥10倍跑）'],
-  ['h5', 'H5（只有大獎跑分）',         r => r >= FX.bigWinRatio, 'H5（僅大獎跑）'],
+         '星城 ≥10倍'],
+  ['h5', 'H5（只有大獎跑分）',         r => r >= FX.bigWinRatio, 'H5 僅大獎'],
 ];
 let CENTER_RUN_MODE = 'xc';
 function centerRunMode() {
@@ -3660,9 +3660,9 @@ function buildTimingTab() {
   sw.className = 'tune-hint';
   sw.style.display = 'flex'; sw.style.alignItems = 'center'; sw.style.gap = '8px';
   const swLab = document.createElement('span');
-  swLab.textContent = '編輯中的速度模式：';
+  swLab.textContent = '速度：';
   sw.appendChild(swLab);
-  [['auto', 'AUTO（一般）'], ['turbo', 'TURBO（快速）'], ['turbo2', 'TURBO2（最快）']].forEach(m => {
+  [['auto', 'AUTO'], ['turbo', 'TURBO'], ['turbo2', 'TURBO2']].forEach(m => {
     const b = document.createElement('button');
     b.textContent = m[1];
     b.style.cssText = 'padding:3px 10px;border-radius:6px;cursor:pointer;font-size:12px;border:1px solid '
@@ -3700,12 +3700,6 @@ function buildTimingTab() {
     });
     cr.appendChild(b);
   });
-  const crNote = document.createElement('div');
-  crNote.style.cssText = 'flex:1 0 100%;color:#94a3b8;font-size:11px;';
-  crNote.textContent = '不跑分＝盤面中央的數字直接顯示最終得分（時間軸長度不變）。'
-    + '左上「得分」欄只顯示本回合的賠率贏分＋功能卡加成（不含倍數、不跑分）；'
-    + '下方公版是連爆累積分數，也不跑分，回合演完直接切換。';
-  cr.appendChild(crNote);
   tuneBody.appendChild(cr);
 
   const hint = document.createElement('div');
