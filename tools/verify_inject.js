@@ -300,6 +300,7 @@ function run() {
   function countState(target, apply) {
     reset();
     ODDS.maxRound = 1;          // 固定單回合，排除「連爆回合數隨機」造成的雜訊
+    ODDS.wToWild = 0;           // 「轉換WILD」卡會改牌型 → 偶發沒中獎、整段演繹不跑（間歇性失敗）
     apply(); applyTuning();
     forceSpinType = 'pair';     // 一對＝0.1×100＝10，ratio 0.1 → 必定是 1 階
     var c = 0, n = 0;
@@ -696,6 +697,7 @@ function run() {
     ODDS.payMul = payMul; CENTER_RUN_MODE = mode;
     var boxVals = [], centerVals = [], panelVals = [], holdVals = [], n = 0;
     var flag = null, rw = 0, base = 0, ratio = 0, afterPanel = null, prevState = -1;
+    var earlyPanel = false;
     startSpin();
     // 兩者都要在 startSpin 之後設：startSpin 會重置起始倍數並重抽功能卡。
     // 清掉功能卡＝倍數與賠付都可預測；起始倍數 >1 才會讓「相乘前的得分 base」與「最終得分」不同，
@@ -713,6 +715,10 @@ function run() {
         panelVals.push(displayScore);        // 下方公版 WIN 用的就是這個值
       }
       if (currentState === STATE.SCORE_HOLD && slamResult) holdVals.push(slamResultValue());
+      // 面板不該在碰撞／跑分前停留期間就先跳出來停著
+      if ((currentState === STATE.MULT_SLAM || currentState === STATE.POST_HOLD) && slamResult) {
+        earlyPanel = true;
+      }
       // 這一回合的演繹結束（復原演繹跑完 → afterScore）之後，公版該切換到累計分數
       if (afterPanel === null && prevState === STATE.SCORE_HOLD && currentState !== STATE.SCORE_HOLD) {
         afterPanel = displayScore;
@@ -722,7 +728,7 @@ function run() {
     }
     ODDS.payMul = DEFAULT_ODDS.payMul;
     return { box: boxVals, center: centerVals, panel: panelVals, hold: holdVals,
-             afterPanel: afterPanel, spinWin: spinWin,
+             afterPanel: afterPanel, spinWin: spinWin, earlyPanel: earlyPanel,
              run: flag, win: rw, base: base, ratio: ratio, roundWin: rw };
   }
   function allSame(a) { return a.length > 0 && a.every(function (v) { return v === a[0]; }); }
@@ -744,11 +750,20 @@ function run() {
     '演繹中=' + lo.panel[0] + ' → 演完=' + lo.afterPanel + ' 累計=' + lo.spinWin);
 
   // 高倍：星城規則下要跑分（皇家同花順 + payMul 拉滿）
-  var hi = runTrace('xc', 'royal', 5, 8);
+  // 12 倍：星城要跑分，但未達大獎門檻（25 倍）→ 才會走中央得分面板這條路
+  var hi = runTrace('xc', 'royal', 0.2, 4);
+  T('10i 高倍：倍數落在 10～25 倍之間（跑分但不是大獎）',
+    hi.ratio >= 10 && hi.ratio < FX.bigWinRatio, 'ratio=' + hi.ratio.toFixed(2));
   T('10i 高倍：中央判定為跑分', hi.run === true, 'ratio=' + hi.ratio.toFixed(2));
   T('10i 高倍：中央數字從相乘前的得分起跑',
     Math.abs(hi.center[0] - hi.base) < Math.max(1, hi.base * 0.05),
     hi.center[0] + ' 起跑，base=' + hi.base);
+  // 使用者 2026-08-28：面板一出來就要是在跑的狀態，不能先跳出來停著等停頓
+  T('10i 高倍：面板沒有在碰撞／跑分前停留期間就先出現', hi.earlyPanel === false);
+  T('10i 高倍：面板第一幀就已經在跑（第 2 幀就比第 1 幀大）',
+    hi.center.length > 1 && hi.center[1] > hi.center[0],
+    hi.center[0] + ' → ' + hi.center[1]);
+  T('10i 低倍：面板同樣不提前出現（不跑分也是跑分那一刻才出現）', lo.earlyPanel === false);
   T('10i 高倍：跑分尾端已經逼近最終得分（最後一幀在 SCORE_HOLD 才到位）',
     hi.center[hi.center.length - 1] >= hi.win * 0.95,
     hi.center[hi.center.length - 1] + ' vs ' + hi.win);
@@ -767,8 +782,10 @@ function run() {
     '演繹中=' + hi.panel[0] + ' → 演完=' + hi.afterPanel + ' 累計=' + hi.spinWin);
 
   // 同一個高倍情境改成 H5 規則：大獎才跑；ratio 遠超 25 → 仍要跑
-  var hiH5 = runTrace('h5', 'royal', 5, 8);
-  T('10i H5 高倍（≥大獎）：中央仍跑分', hiH5.run === true, 'ratio=' + hiH5.ratio.toFixed(2));
+  var hiH5 = runTrace('h5', 'royal', 5, 8);   // 遠超大獎門檻
+  T('10i H5 高倍（≥大獎）：改由大獎畫面跑分，不出中央面板',
+    hiH5.run === null && hiH5.center.length === 0,
+    'ratio=' + hiH5.ratio.toFixed(2) + ' 中央幀數=' + hiH5.center.length);
   var loH5 = runTrace('h5', 'pair', 0.1, 4);
   T('10i H5 低倍：中央不跑分', loH5.run === false && allSame(loH5.center));
   CENTER_RUN_MODE = keepMode;
@@ -791,36 +808,61 @@ function run() {
     ODDS.payMul = payMul;
     var n = 0, prev = -1, roundsDone = 0, bigAtRound = -1, bigLabels = [];
     var winAtBig = -1, spinEnded = false, bigCount = 0;
+    var bigVals = [], panelDuringBig = false, prevOfBig = -1, afterPost = -1;
     startSpin();
     startMult = sm || 1; features = [];
     while (n < 200000) {
       update(); n++;
       // 每次離開 SCORE_HOLD 就是一個回合的得分演繹演完了
       if (prev === STATE.SCORE_HOLD && currentState !== STATE.SCORE_HOLD) roundsDone++;
+      // 跑分前停留的下一個狀態是什麼（大獎 or 中央面板）
+      if (prev === STATE.POST_HOLD && currentState !== STATE.POST_HOLD && afterPost < 0) {
+        afterPost = currentState;
+      }
       if (prev !== STATE.BIGWIN && currentState === STATE.BIGWIN) {
         bigCount++;
         bigLabels.push(bigWinLabel);
-        if (bigAtRound < 0) { bigAtRound = roundsDone; winAtBig = spinWin; }
+        if (bigAtRound < 0) { bigAtRound = roundIdx; winAtBig = spinWin; prevOfBig = prev; }
+      }
+      if (currentState === STATE.BIGWIN) {
+        if (bigCount === 1) bigVals.push(bigWinValue());
+        if (slamResult) panelDuringBig = true;       // 大獎期間不該有中央得分面板
       }
       prev = currentState;
       if (currentState === STATE.IDLE && !inFG) { spinEnded = true; break; }
     }
     ODDS.payMul = DEFAULT_ODDS.payMul;
     return { rounds: roundsDone, bigAtRound: bigAtRound, labels: bigLabels, count: bigCount,
-             winAtBig: winAtBig, spinWin: spinWin, ended: spinEnded, steps: n };
+             winAtBig: winAtBig, spinWin: spinWin, ended: spinEnded, steps: n,
+             bigVals: bigVals, panelDuringBig: panelDuringBig, prevOfBig: prevOfBig,
+             afterPost: afterPost };
   }
 
   // 皇家同花順 ×5 賠率乘數 → 第 1 回合就遠超大獎門檻
   var bw = bigWinTrace(5, 1, 4);
   T('10j 大獎有報出來', bw.bigAtRound >= 0, 'label=' + bw.labels.join(','));
-  T('10j 大獎在第 1 回合演完就報，不是等連爆結束',
-    bw.bigAtRound === 1, '在第 ' + bw.bigAtRound + ' 回合之後報（總共 ' + bw.rounds + ' 回合）');
+  T('10j 大獎在第 1 個連爆回合就報，不是等連爆結束',
+    bw.bigAtRound === 0, '在第 ' + (bw.bigAtRound + 1) + ' 回合報（總共 ' + bw.rounds + ' 回合）');
   T('10j 報獎當下的累計贏分已達門檻',
     bw.winAtBig >= FX.bigWinRatio * ODDS.bet,
     bw.winAtBig + ' >= ' + (FX.bigWinRatio * ODDS.bet));
   T('10j 同一階不會重複報（有升階才再報一次）',
     bw.count === new Set(bw.labels).size, bw.labels.join(','));
   T('10j 局末仍然回到待機', bw.ended === true);
+
+  // 使用者 2026-08-28：達標那回合不出中央得分面板，直接在大獎畫面跑分，且一出現就在跑
+  T('10j 大獎接在「跑分前停留」之後（不是等中央面板演完）',
+    bw.prevOfBig === STATE.POST_HOLD && bw.afterPost === STATE.BIGWIN,
+    'prev=' + bw.prevOfBig + ' afterPost=' + bw.afterPost);
+  T('10j 大獎期間不出現中央的得分數字面板', bw.panelDuringBig === false);
+  T('10j 大獎畫面的數字第一幀就在跑（第 2 幀比第 1 幀大）',
+    bw.bigVals.length > 1 && bw.bigVals[1] > bw.bigVals[0],
+    bw.bigVals[0] + ' → ' + bw.bigVals[1]);
+  T('10j 大獎跑分從「這回合之前的累計」起跑', bw.bigVals[0] === 0,
+    '第一局第一回合＝從 0 起跑，實得 ' + bw.bigVals[0]);
+  T('10j 大獎跑分最後停在本局累計並停留',
+    bw.bigVals[bw.bigVals.length - 1] === bw.winAtBig,
+    bw.bigVals[bw.bigVals.length - 1] + ' vs ' + bw.winAtBig);
 
   // 重轉後會不會再中是隨機的，所以多回合的樣本用抽的（單次抽不到不代表壞掉）
   var multi = null;
@@ -831,11 +873,11 @@ function run() {
   T('10j 抽得到「多回合連爆 + 有大獎」的樣本', !!multi, multi ? 'rounds=' + multi.rounds : '60 次都沒抽到');
   if (multi) {
     T('10j 多回合：大獎仍在第 1 回合就報（不是最後一回合）',
-      multi.bigAtRound === 1 && multi.rounds >= 2,
-      '第 ' + multi.bigAtRound + ' 回合報，總共 ' + multi.rounds + ' 回合');
+      multi.bigAtRound === 0 && multi.rounds >= 2,
+      '第 ' + (multi.bigAtRound + 1) + ' 回合報，總共 ' + multi.rounds + ' 回合');
     T('10j 多回合：大獎報完這一局還繼續連爆（不是直接結束）',
-      multi.rounds > multi.bigAtRound,
-      '報獎後又演了 ' + (multi.rounds - multi.bigAtRound) + ' 個回合');
+      multi.rounds > multi.bigAtRound + 1,
+      '報獎後又演了 ' + (multi.rounds - multi.bigAtRound - 1) + ' 個回合');
   }
 
   // 小獎：整局都沒到門檻 → 完全不報

@@ -1012,6 +1012,7 @@ let drawInfo = null, drawRespinUsed = 0;
 let spinWin = 0, fgWin = 0, totalScore = 0, displayScore = 0;
 let bigWinLabel = '';
 let bigWinShown = 0;           // 本局已經報過的大獎階數（0 = 還沒報），只往上升不重複報
+let bigWinFrom = 0, bigWinTo = 0;   // 大獎畫面上跑分的起訖值（上一回合累計 → 本局累計）
 let handLabelText = '', handLabelKind = '';
 let wildBeams = [];
 
@@ -1705,22 +1706,24 @@ function onSlamHit() {
   slamHit = true;
   shakeAmp = SHAKE_TIERS[winTier] || 0;
   slamRings.push({ t: 0, life: Math.max(6, Math.round(F_MULTSLAM * 0.7)) });
-  if (showScorePopup) {
-    // run＝這一回合的中央數字要不要跑分（規則見 CENTER_RUN_MODES，節奏面板可切換）
-    slamResult = { t: 0, score: roundWin, base: Math.round(scoreNow()), mult: curMult,
-                   run: centerRunEnabled(roundWin) };
-  }
 }
-// 相乘結果牌要活到「復原演繹」為止；跨 MULT_SLAM→POST_HOLD→SCORE_RUN→SCORE_HOLD 都在
+/* 盤面中央的得分數字面板：**在跑分開始的那一刻才出現，一出來就是在跑的狀態**
+ * [使用者 2026-08-28]——不要先跳出來停著、等停頓完才開始跑。
+ * 所以它不在碰撞時建立，而是在進入 SCORE_RUN 時建立。 */
+function startScoreRun() {
+  slamResult = showScorePopup
+    ? { t: 0, score: roundWin, base: Math.round(scoreNow()), mult: curMult,
+        run: centerRunEnabled(roundWin) }     // run＝這回合跑不跑分，見 CENTER_RUN_MODES
+    : null;
+  currentState = STATE.SCORE_RUN; stateTimer = 0;
+}
+// 中央面板從跑分開始活到「復原演繹」為止
 function slamResultAlive() {
-  return currentState === STATE.MULT_SLAM || currentState === STATE.POST_HOLD
-      || currentState === STATE.SCORE_RUN || currentState === STATE.SCORE_HOLD;
+  return currentState === STATE.SCORE_RUN || currentState === STATE.SCORE_HOLD;
 }
 function afterScore() {
   // 這一回合演完了 → 下方公版的累積分數直接切換到新的累計值（不跑分）[使用者 2026-08-28]
   displayScore = spinWin;
-  // 大獎：這一回合就達標就在這裡報，報完再接下面的流程 [使用者 2026-08-28]
-  if (checkBigWin()) return;
   resumeAfterScore();
 }
 // 大獎報完（或本來就沒大獎）之後接的流程
@@ -1764,10 +1767,12 @@ function doDrawRespin() {
   beginReels(cols);
 }
 
-/* 四階大獎 [§美術需求說明 B76:D81]。
- * 使用者 2026-08-28：**達標的那一回合就要報，不是等一局（連爆）結束才報**。
- * 所以判定改在每一回合的得分演繹之後（afterScore）跑，用本局累計贏分比門檻；
- * 同一局只往上升階（BIG → SUPER → MEGA → EPIC），不會同一階重複報。 */
+/* 四階大獎 [§美術需求說明 B76:D81]。使用者 2026-08-28 的兩條指定：
+ *   1) **達標的那一回合就要報**，不是等一局（連爆）結束才報 → 判定放在「跑分前停留」之後。
+ *   2) 那一回合**不出中央的得分數字面板**，直接在大獎畫面上跑分，
+ *      而且**大獎面板一出來就是在跑的狀態**（沒有先停著再跑）。
+ * 同一局只往上升階（BIG → SUPER → MEGA → EPIC），不會同一階重複報。
+ * 跑分的區間＝上一回合的累計 → 本局累計（跑分時長用【得分數字演繹】，跑完再停 bigWinHold）。 */
 const BIGWIN_LABELS = ['', 'BIG WIN', 'SUPER WIN', 'MEGA WIN', 'EPIC WIN'];
 function bigWinTierOf(v) {
   const r = v / Math.max(1, ODDS.bet);
@@ -1776,14 +1781,20 @@ function bigWinTierOf(v) {
        : r >= FX.superWinRatio ? 2
        : r >= FX.bigWinRatio   ? 1 : 0;
 }
-// 有升階就進 BIGWIN 並回 true（呼叫端要 return，等報完再接原本的流程）
-function checkBigWin() {
-  const t = bigWinTierOf(spinWin);
-  if (t <= bigWinShown) return false;
-  bigWinShown = t;
-  bigWinLabel = BIGWIN_LABELS[t];
+// 這一回合要不要報大獎（有升階才報）
+function bigWinDueThisRound() { return bigWinTierOf(spinWin) > bigWinShown; }
+function startBigWin() {
+  bigWinShown = bigWinTierOf(spinWin);
+  bigWinLabel = BIGWIN_LABELS[bigWinShown];
+  bigWinFrom = Math.max(0, spinWin - roundWin);   // 這回合之前的累計
+  bigWinTo = spinWin;
+  slamResult = null;                              // 大獎取代中央的得分數字面板
   currentState = STATE.BIGWIN; stateTimer = 0;
-  return true;
+}
+// 大獎畫面上的數字：一出來就開始跑，跑完停在本局累計
+function bigWinValue() {
+  const k = Math.min(1, stateTimer / Math.max(1, F_SCOREAPPEAR));
+  return bigWinFrom + (bigWinTo - bigWinFrom) * k;
 }
 
 function endSpin() {
@@ -1825,7 +1836,7 @@ function startSpin() {
   drawRespinUsed = 0; freeRespins = 0;
   particles = []; floatTexts = []; wildBeams = [];
   slamK = 0; slamHit = false; slamRings = []; slamResult = null;   // 復原演繹 [§美術 H48]
-  bigWinShown = 0; bigWinLabel = '';        // 大獎逐局重算（FG 的每一局也各自算）
+  bigWinShown = 0; bigWinLabel = ''; bigWinFrom = 0; bigWinTo = 0;   // 大獎逐局重算
   boostK = 0; boostHit = false; boostChevrons = [];
   handLabelText = ''; handLabelKind = '';
 
@@ -1894,7 +1905,7 @@ function skipCurrent() {
   jump[STATE.SCORE_HOLD]   = F_SCOREHOLD + F_SLAMRESTORE;
   jump[STATE.MULT_BOOST]   = F_MULTBOOST;
   jump[STATE.DRAW_HINT]    = F_DRAWHINT;
-  jump[STATE.BIGWIN]       = F_BIGWIN;
+  jump[STATE.BIGWIN]       = F_SCOREAPPEAR + F_BIGWIN;
   jump[STATE.FG_ENTER]     = F_FGENTER;
   jump[STATE.FG_END]       = F_FGENTER;
   if (jump[currentState] !== undefined) {
@@ -2006,7 +2017,9 @@ function update() {
       stateTimer++;
       slamK = 1;
       if (stateTimer >= (F_POST[winTier] || 0)) {
-        currentState = STATE.SCORE_RUN; stateTimer = 0;
+        // 這回合達到大獎條件 → 不出中央面板，直接進大獎畫面跑分 [使用者 2026-08-28]
+        if (bigWinDueThisRound()) startBigWin();
+        else startScoreRun();
       }
       break;
 
@@ -2077,7 +2090,11 @@ function update() {
 
     case STATE.BIGWIN:
       stateTimer++;
-      if (stateTimer >= F_BIGWIN) { bigWinLabel = ''; resumeAfterScore(); }
+      // 前段跑分（面板一出現就在跑）＋ 後段報獎停留
+      if (stateTimer >= F_SCOREAPPEAR + F_BIGWIN) {
+        bigWinLabel = '';
+        currentState = STATE.SCORE_HOLD; stateTimer = 0;   // 接分數停留 → 復原演繹
+      }
       break;
 
     case STATE.FG_ENTER:
@@ -2525,11 +2542,10 @@ function slamResultValue() {
   if (!slamResult) return 0;
   if (!slamResult.run) return slamResult.score;
   if (currentState === STATE.SCORE_RUN) {
+    // 第 0 幀就已經在跑（面板出現＝開始跑），跑完停在最終得分
     const rk = Math.min(1, stateTimer / Math.max(1, F_SCOREAPPEAR));
     return slamResult.base + (slamResult.score - slamResult.base) * rk;
   }
-  // 還沒開始跑（碰撞中／跑分前停留）先停在相乘前的得分；跑完（SCORE_HOLD）顯示最終得分
-  if (currentState === STATE.MULT_SLAM || currentState === STATE.POST_HOLD) return slamResult.base;
   return slamResult.score;
 }
 
@@ -3011,7 +3027,7 @@ function drawOverlayState() {
     ctx.shadowBlur = 12;
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 56px Arial';
-    ctx.fillText(fmtScore(spinWin), 0, 78);
+    ctx.fillText(fmtScore(bigWinValue()), 0, 78);
     ctx.restore();
   }
   if (currentState === STATE.FG_ENTER) {
@@ -3962,25 +3978,31 @@ function rhythmTimeline(T, kind, tier) {
     t += post;
     skips.push(t);
 
-    // 跑分 → 停留 → 復原演繹 [§節奏表 D8/D9]＋[§美術 H48]
-    segs.push({ t0: t, dur: T.scoreAppear,
-      text: '得分數字跑分(' + R1(T.scoreAppear) + 's)', fill: 'score' });
-    marks.push({ t: t, text: '中央得分數字跑分' });
-    t += T.scoreAppear;
+    /* 跑分 → 停留 → 復原演繹 [§節奏表 D8/D9]＋[§美術 H48]
+     * 使用者 2026-08-28：面板（中央得分數字／大獎）**一出現就是在跑的狀態**，
+     * 跑分本身沒有前置停頓；達到大獎條件的那一回合不出中央面板，直接在大獎畫面跑分。 */
+    if (g === bigAt) {
+      segs.push({ t0: t, dur: T.scoreAppear,
+        text: '大獎跑分(' + R1(T.scoreAppear) + 's)', fill: 'big' });
+      marks.push({ t: t, text: '第' + (g + 1) + '回合達標：大獎面板出現即跑分' });
+      t += T.scoreAppear;
+      segs.push({ t0: t, dur: T.bigWinHold,
+        text: '大獎報獎停留(' + R1(T.bigWinHold) + 's)', fill: 'big' });
+      t += T.bigWinHold;
+      notes.push('大獎（≥' + FX.bigWinRatio + '倍）在「達標的那一回合」就報，不等連爆結束；'
+        + '該回合不出中央的得分數字面板，直接在大獎畫面上跑分（面板一出現就在跑）。'
+        + '同一局只往上升階，不重複報。大獎跳過立刻分數呈現最終。');
+    } else {
+      segs.push({ t0: t, dur: T.scoreAppear,
+        text: '得分數字跑分(' + R1(T.scoreAppear) + 's)', fill: 'score' });
+      marks.push({ t: t, text: '中央得分面板出現即跑分' });
+      t += T.scoreAppear;
+    }
     segs.push({ t0: t, dur: T.scoreHold, text: '停留(' + R1(T.scoreHold) + 's)', fill: 'scoreHold' });
     t += T.scoreHold;
     segs.push({ t0: t, dur: T.slamRestore, text: '復原演繹(' + R1(T.slamRestore) + 's)', fill: 'score' });
     t += T.slamRestore;
     marks.push({ t: t, text: '公版累積分數切換' });     // 不跑分，回合結束直接切換
-
-    // 大獎報獎：達標的那一回合就報 [使用者 2026-08-28]，順序在起始倍數加倍演繹之前
-    if (g === bigAt) {
-      segs.push({ t0: t, dur: T.bigWinHold, text: '大獎報獎(' + R1(T.bigWinHold) + 's)', fill: 'big' });
-      marks.push({ t: t, text: '第' + (g + 1) + '回合達標報獎' });
-      t += T.bigWinHold;
-      notes.push('大獎（≥' + FX.bigWinRatio + '倍）在「達標的那一回合」就報，不等連爆結束；'
-        + '同一局只往上升階，不重複報。大獎跳過立刻分數呈現最終。');
-    }
 
     // 多回合情境的第一回合用「5 張全中 → 起始倍數加倍」當觸發重轉的理由 [§一般遊戲 E47]
     if (kind === 'multi' && g === 0) {

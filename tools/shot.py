@@ -124,9 +124,13 @@ function SCENE() {
   SETB([ID(4,2), ID(4,1), ID(4,3), ID(4,0), WILD_ID]);
   for (var c = 0; c < 5; c++) colStopped[c] = true;
   features = rollFeatures(5);
-  startMult = 64; spinWin = 41200000; displayScore = spinWin;
-  bigWinLabel = 'EPIC WIN';
-  currentState = STATE.BIGWIN; stateTimer = 14;
+  startMult = 64; spinWin = 41200000;
+  roundWin = 41200000;
+  displayScore = 0;                      // 公版：這一回合演完才切換
+  bigWinLabel = 'EPIC WIN'; bigWinShown = 4;
+  // 大獎面板一出來就在跑分：從這回合之前的累計跑到本局累計 [使用者 2026-08-28]
+  bigWinFrom = 0; bigWinTo = spinWin;
+  currentState = STATE.BIGWIN; stateTimer = Math.round(F_SCOREAPPEAR * 0.45);
 }
 """),
     ("06_force_menu", """
