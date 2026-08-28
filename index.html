@@ -190,6 +190,7 @@ canvas { display: block; width: 100%; height: 100%; }
       <button id="tuneApplySpin">套用並試轉</button>
       <button id="tuneReset">重設為預設</button>
       <button id="tuneExport">匯出全部設定</button>
+      <button id="tuneExportRhythm">匯出節奏表</button>
       <div id="tuneStatus" aria-live="polite"></div>
     </div>
   </div>
@@ -243,7 +244,7 @@ canvas { display: block; width: 100%; height: 100%; }
  * 面板本身（區塊 7）原則上不用動。
  * ========================================================== */
 
-const APP_BUILD = 'crescendo-6';   // 驗證用識別值：測到的是不是最新版，看這個
+const APP_BUILD = 'crescendo-7';   // 驗證用識別值：測到的是不是最新版，看這個
 const GAME_NAME = 'Crescendo';
 
 const canvas = document.getElementById('gameCanvas');
@@ -408,6 +409,160 @@ const DEFAULT_TIMING = {
   fgSpinGap:      0.40,   // FG 局間 [§節奏表 AI7：FG 一輪 0.4s]
   autoSpinDelay:  0.45,   // AUTO 局間停頓 [自設]
 };
+/* --- TURBO 節奏（秒）---
+ * 公版工具參數表有 AUTO / TURBO 兩欄，這是 TURBO 那欄。面板頂端可切換編輯哪一組，
+ * 切到 TURBO 時 demo 就用這組跑，拉完直接試轉驗證手感。
+ * SOP 規範（節奏組檢核）：**Turbo 只能「濃縮」不能「略過」，也不可加速重要機制的演出**。
+ * 所以【得分相乘演繹】的前後停留、跑分、起始倍數加倍、大獎、FG 轉場這幾項兩組值刻意相同。 */
+const DEFAULT_TIMING_TURBO = {
+  reelStart:       0.50,   // SOP 滾輪轉動時間 TURBO 0.5–0.7
+  reelStopInterval: 0,     // SOP：TURBO 齊停
+  reelSpeed:       0.035,
+  landBounce:      0.10,
+  winHold:         0.30,   // SOP 停頓時間(中獎) TURBO 0.3
+  cardLock:        0.18,
+  cardLift:        0.20,
+  cardLiftStagger: 0.03,
+  featTrigger:     0.25,
+  lampFlash:       0.30,
+  multSlam:        0.60,   // 重要機制，不加速
+  slamRestore:     0.20,
+  preHold1:        0.30,   // 得分層級停留：SOP 不可加速重要演出 → 與 AUTO 相同
+  preHold2:        0.80,
+  preHold3:        1.50,
+  postHold1:       0.30,
+  postHold2:       0.80,
+  postHold3:       1.50,
+  scoreAppear:     1.00,   // SOP 得分演繹 0.7–1.2，兩組相同
+  scoreHold:       0.70,
+  symbolFx:        1.00,   // SOP 圖示演繹 0.5–1，兩組相同
+  multBoost:       0.80,   // 重要機制，不加速
+  respinPause:     0.30,   // SOP 停頓時間(盤間) 0.3
+  idleGap:         0.30,   // SOP 停頓時間(局間) TURBO 0.3
+  drawHint:        0,      // SOP 預報時間 TURBO 0
+  freeCollect:     0.35,
+  bigWinHold:      1.80,   // 大獎不加速
+  fgEnterHold:     1.60,   // 轉場不加速
+  fgSpinGap:       0.30,
+  autoSpinDelay:   0.30,
+};
+
+/* --- 節奏表匯出：對照節奏組公版 ---------------------------------
+ * 格式依據：skill 的 references/rhythm-sheet-format.md
+ *（來源＝D:\星城提案\01_進行中\節奏 的實檔傾印，不是憑印象寫的）
+ * ---------------------------------------------------------------- */
+// Crescendo ＝ 撲克牌型判定 + WILD(百搭) + 得分後重轉（等價於連爆的補盤），取 '百搭+連爆' 這套 SOP
+const RHYTHM_TYPE = '百搭+連爆';
+
+// demo 的 TIMING key → 公版工具參數表的一列。
+// key = null 表示這列不由 demo 決定（特效檔或公版決定），第 5 欄的 fixed 值直接填進去。
+// 第 4 欄 = 對到「範本／節奏時間說明」的哪個 SOP 區間名，null 表示 SOP 沒規範這項。
+// 停頓類參數帶流水編號 aN，編號按在本表出現的先後（公版慣例）。
+const RHYTHM_MAP = [
+  ['reelStart',        '滾輪啟動',            '滾輪滾動到第一輪停輪所需的持續時間',                 '滾輪轉動時間'],
+  ['reelStopInterval', '逐輪停止',            '每個滾輪停輪之間的間格；設 0 為同時停輪',           '每輪停止時間'],
+  ['reelSpeed',        '滾輪滾動速度',        '滾輪捲動一格牌卡所需時間，越小越快',                 null],
+  [null,               '滾輪滾動曲線',        '承接滾輪時間參數，可設定滾輪滾動的速度變化曲線',     null, 'n'],
+  ['landBounce',       '滾輪回彈時間',        '牌卡落定後回彈到完全停止的持續時間',                 null],
+  ['idleGap',          '局間(未中獎)a1',      '未中獎時的換局停頓時間',                             '停頓時間(局間)'],
+  ['winHold',          '中獎前停頓a2',        '停輪後，到播放得分牌演繹前的停頓時間',               '停頓時間(中獎)'],
+  ['cardLock',         '得分牌鎖定演繹',      '得分牌鎖定（外框亮起）的持續時間',                   null],
+  ['cardLift',         '得分牌抬起演繹',      '得分牌往上彈出、放大、扇形傾斜的持續時間',           '圖示演繹'],
+  ['cardLiftStagger',  '得分牌逐張錯開',      '得分牌抬起時每張之間的錯開間格',                     null],
+  ['featTrigger',      '功能卡觸發演繹',      '每張功能卡由左至右逐一觸發的持續時間',               '圖示演繹'],
+  ['lampFlash',        '盤面框燈條發光',      '盤面外框燈條「發光一次」的衰減時長',                 null],
+  ['preHold1',         '得分相乘前停頓a3',    '1階：功能卡套用完畢，到得分相乘演繹前的停頓',        null],
+  ['preHold2',         '得分相乘前停頓a4',    '2階（25倍以上）',                                    null],
+  ['preHold3',         '得分相乘前停頓a5',    '3階（101倍以上）',                                   null],
+  ['multSlam',         '得分相乘演繹',        '得分欄與倍數欄往中間碰撞相乘的持續時間',             null],
+  ['postHold1',        '跑分前停頓a6',        '1階：得分相乘演繹後，到得分數字跑分前的停頓',        '得分顯示間隔'],
+  ['postHold2',        '跑分前停頓a7',        '2階（25倍以上）',                                    '得分顯示間隔'],
+  ['postHold3',        '跑分前停頓a8',        '3階（101倍以上）',                                   '得分顯示間隔'],
+  ['scoreAppear',      '得分數字演繹',        '得分數字跑分的持續時間',                             '得分演繹'],
+  ['scoreHold',        '得分數字停留',        '跑分結束後分數停留的持續時間',                       '公版分數'],
+  ['slamRestore',      '復原演繹',            '得分欄與倍數欄往左右回到原位的持續時間',             null],
+  ['symbolFx',         '轉換WILD演繹',        '轉換 WILD 功能卡的光子傳遞演繹持續時間',             '圖示演繹'],
+  ['multBoost',        '起始倍數加倍演繹',    '5 張全中時，牌組向上撞擊、起始倍數加倍的持續時間',   null],
+  ['respinPause',      '重轉前停頓a9',        '得分演繹結束後，到重轉滾動啟動前的停頓時間',         '停頓時間(盤間)'],
+  ['drawHint',         '預報演繹',            '差一張成順子/同花時的預報持續時間',                  '預報時間'],
+  ['freeCollect',      'FREE收集演繹',        'FREE 圖示收集進計量條的持續時間',                    null],
+  ['autoSpinDelay',    '局間(中獎)a10',       '中獎時，分數關閉後到下一局轉輪啟動的停頓時間',       '停頓時間(局間)'],
+  ['fgSpinGap',        'FG局間a11',           'FG 中每一局之間的停頓時間',                          '停頓時間(局間)'],
+  ['bigWinHold',       '大獎演繹(停留)',      '大獎停留演繹的持續時間',                             '一般Big獎'],
+  ['fgEnterHold',      'FG轉場版',            'FG 轉場版的持續時間',                                'FG/BG宣告框'],
+  // 以下由特效檔／公版決定，demo 給不出值，一律填 FX／公版（誠實條款，不要拿 demo 暫代值充數）
+  [null, '大獎前停頓a12',   '大獎演繹前的停頓時間',                        null,          'FX'],
+  [null, '大獎演繹(跑分)',  '大獎跑分演繹的持續時間',                      null,          'FX'],
+  [null, '轉場前停頓a13',   'FREE 收集完成後，到出現 FG 轉場版前的停頓',   null,          'FX'],
+  [null, '轉場後停頓a14',   '轉場後，到 FG 第一局啟動前的停頓時間',        null,          '公版'],
+  [null, 'FG/BG結算框',     'FG 最後一局結束後，結算板顯示的持續時間',     'FG/BG結算框', '公版'],
+];
+
+// SOP 標準值：區間名 → [AUTO, TURBO]。來源見 rhythm-sheet-format.md「SOP 標準值」。
+// 區間用連接號 – (U+2013)，跟實檔一致；純文字（無／不超過…）照抄。
+const RHYTHM_SOP_TABLE = {
+  '百搭+連爆': {
+    '滾輪轉動':       ['1.5–1.8', '0.5–0.7'],
+    '滾輪轉動時間':   ['0.7–1',   '0.5–0.7'],
+    '每輪停止時間':   ['0.2',     '0'],
+    '預報時間':       ['1–3',     '0'],
+    '停頓時間(中獎)': ['0.4',     '0.3'],
+    '得分框演繹':     ['0.5–1',   '0.5–1'],
+    '圖示演繹':       ['0.5–1',   '0.5–1'],
+    '得分顯示間隔':   ['0–0.3',   '0–0.3'],
+    '得分演繹':       ['0.7–1.2', '0.7–1.2'],
+    '補盤掉落':       ['0.12–0.2', '0'],
+    '公版分數間隔':   ['0.2',     '0.2'],
+    '公版分數':       ['0.7–1.2', '0.7–1.2'],
+    '爆破演繹':       ['無',      '無'],
+    '停頓時間(盤間)': ['0.3',     '0.3'],
+    '停頓時間(局間)': ['0.4',     '0.3'],
+    '單局時間':       ['1.9–2.3', '0.8–1'],
+    'FG/BG宣告框':    ['3',       '3'],
+    'FG/BG結算框':    ['3',       '3'],
+    '一般Big獎':      ['3',       '3'],
+    '一般Super獎':    ['6',       '6'],
+    '一般Mega獎':     ['11',      '11'],
+    '一般Epic獎':     ['14',      '14'],
+    '單階Big獎':      ['3',       '3'],
+    '單階Super獎':    ['4',       '4'],
+    '單階Mega獎':     ['6',       '6'],
+    '單階Epic獎':     ['7',       '7'],
+  },
+  '連線': {
+    '滾輪轉動':       ['1.5–1.8', '0.7–1'],
+    '滾輪轉動時間':   ['0.7–1',   '0.7–1'],
+    '每輪停止時間':   ['0.2',     '0'],
+    '預報時間':       ['1–4',     '0'],
+    '停頓時間(中獎)': ['0.3',     '0.2'],
+    '得分框演繹':     ['0.5–1.5', '0.5–1.5'],
+    '圖示演繹':       ['0.5–1.5', '0.5–1.5'],
+    '得分線演繹間隔': ['0.2',     '0'],
+    '得分線演繹':     ['不超過得分演繹', '不超過得分演繹'],
+    '得分演繹':       ['0.7–1.2', '0.7–1.2'],
+    '得分下收':       ['0.2',     '0.2'],
+    '停頓時間(局間)': ['0.3',     '0.2'],
+    '單局時間':       ['1.8–2.2', '1–1.3'],
+    'FG/BG宣告框':    ['0.4',     '0.4'],
+    'FG/BG結算框':    ['0.4',     '0.4'],
+  },
+};
+RHYTHM_SOP_TABLE['連線+連爆'] = RHYTHM_SOP_TABLE['百搭+連爆'];
+const RHYTHM_SOP = RHYTHM_SOP_TABLE[RHYTHM_TYPE] || RHYTHM_SOP_TABLE['百搭+連爆'];
+
+// 甘特圖的得分級距（照實檔的 7 級）：[下界, 上界, 標題, 加總跑分秒數（Crescendo 不用）]
+const RHYTHM_TIERS = [
+  [0,   10,       '得分＜10倍以下',    0],
+  [10,  20,       '10倍≦得分＜20倍',   0],
+  [20,  25,       '20倍≦得分＜25倍',   0],
+  [25,  50,       '25倍≦得分＜50倍',   0],
+  [50,  100,      '50倍≦得分＜100倍',  0],
+  [100, 200,      '100倍≦得分＜200倍', 0],
+  [200, Infinity, '200倍≦得分',        0],
+];
+// 甘特圖示意用的功能卡張數。企劃 [§一般遊戲 D40] 只寫「隨機出現 1～5 張」，沒給分布 → [自設]
+const RHYTHM_FEAT_CARDS = 2;
+
 const TIMING_META = [
   { group: '滾輪／停輪', items: [
     ['reelStart', '啟動→第1輪停'], ['reelStopInterval', '每輪停輪間隔'],
@@ -670,7 +825,19 @@ function forceMenuOptions() {
 }
 
 /* --- 執行期值：由預設複製而來，面板改的是這幾份 --- */
-let TIMING       = Object.assign({}, DEFAULT_TIMING);
+// 節奏有 AUTO / TURBO 兩組。TIMING 永遠指向「當前生效」那一組，
+// 所以程式各處照舊寫 TF(TIMING.xxx)，不用管現在是哪一組。
+// ⚠️ 重建 TIMING_AUTO/TIMING_TURBO 之後一定要再呼叫 setSpeedMode() 重新指向，
+//    否則 TIMING 還指著被丟掉的舊物件，面板拉了不會生效。
+let TIMING_AUTO  = Object.assign({}, DEFAULT_TIMING);
+let TIMING_TURBO = Object.assign({}, DEFAULT_TIMING_TURBO);
+let SPEED_MODE   = 'auto';               // 'auto' | 'turbo'
+let TIMING       = TIMING_AUTO;
+function setSpeedMode(m) {
+  SPEED_MODE = (m === 'turbo') ? 'turbo' : 'auto';
+  TIMING = (SPEED_MODE === 'turbo') ? TIMING_TURBO : TIMING_AUTO;
+  applyTuning();
+}
 let TIMING_START = Object.assign({}, DEFAULT_TIMING_START);
 let LAYOUT       = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
 let FX           = Object.assign({}, DEFAULT_FX);
@@ -2947,7 +3114,7 @@ document.getElementById('infoTitle').textContent = GAME_NAME;
  * 區塊 7：調校面板（換遊戲原則上不用動）
  * ========================================================== */
 const TUNE_KEY = 'crescendo_tuning';
-const TUNE_VERSION = 5;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
+const TUNE_VERSION = 6;   // 改動 DEFAULT_LAYOUT/參數表就要 +1，否則瀏覽器舊保存值會蓋掉新預設
 let tunePanelOpen = false, tuneTab = 'timing';
 let layoutSelected = null, layoutDrag = null;
 let layoutFieldRefs = {}, layoutRangeRefs = {};
@@ -2969,7 +3136,8 @@ function setTuneStatus(text, state) {
 function saveTuning() {
   try {
     localStorage.setItem(TUNE_KEY, JSON.stringify({
-      version: TUNE_VERSION, timing: TIMING, timeline: TIMING_START,
+      version: TUNE_VERSION, timing: TIMING_AUTO, timingTurbo: TIMING_TURBO,
+      speedMode: SPEED_MODE, timeline: TIMING_START,
       layout: LAYOUT, fx: FX, odds: ODDS, choice: CHOICE,
     }));
     return true;
@@ -2989,7 +3157,9 @@ function loadTuning() {
       localStorage.removeItem(TUNE_KEY);
       // 版本不符（或沒有保存值）→ 一律回到 DEFAULT。
       // 不重設的話，執行期呼叫（storage 事件／另一分頁是舊版程式）會讓舊值留在物件上。
-      TIMING       = Object.assign({}, DEFAULT_TIMING);
+      TIMING_AUTO  = Object.assign({}, DEFAULT_TIMING);
+      TIMING_TURBO = Object.assign({}, DEFAULT_TIMING_TURBO);
+      setSpeedMode('auto');
       TIMING_START = Object.assign({}, DEFAULT_TIMING_START);
       LAYOUT       = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
       FX           = Object.assign({}, DEFAULT_FX);
@@ -2997,7 +3167,9 @@ function loadTuning() {
       CHOICE       = Object.assign({}, DEFAULT_CHOICE);
     }
     else {
-      clampInto(TIMING, DEFAULT_TIMING, d.timing, TIMING_RANGE, [0, 5]);
+      clampInto(TIMING_AUTO,  DEFAULT_TIMING,       d.timing,      TIMING_RANGE, [0, 5]);
+      clampInto(TIMING_TURBO, DEFAULT_TIMING_TURBO, d.timingTurbo, TIMING_RANGE, [0, 5]);
+      setSpeedMode(d.speedMode);
       clampInto(FX,     DEFAULT_FX,     d.fx,     FX_RANGE,     [0, 100]);
       clampInto(ODDS,   DEFAULT_ODDS,   d.odds,   ODDS_RANGE,   [0, 1000]);
       if (d.timeline) for (const k in DEFAULT_TIMING_START) {
@@ -3148,6 +3320,28 @@ function buildChoiceRows() {
 
 function buildTimingTab() {
   tuneBody.innerHTML = '';
+  // 速度模式切換：切過去就用那組跑，拉完直接試轉。公版工具參數表要兩組值。
+  const sw = document.createElement('div');
+  sw.className = 'tune-hint';
+  sw.style.display = 'flex'; sw.style.alignItems = 'center'; sw.style.gap = '8px';
+  const swLab = document.createElement('span');
+  swLab.textContent = '編輯中的速度模式：';
+  sw.appendChild(swLab);
+  [['auto', 'AUTO（一般）'], ['turbo', 'TURBO（快速）']].forEach(m => {
+    const b = document.createElement('button');
+    b.textContent = m[1];
+    b.style.cssText = 'padding:3px 10px;border-radius:6px;cursor:pointer;font-size:12px;border:1px solid '
+      + (SPEED_MODE === m[0] ? '#34d399' : 'rgba(148,163,184,.5)')
+      + ';background:' + (SPEED_MODE === m[0] ? 'rgba(52,211,153,.18)' : 'transparent')
+      + ';color:' + (SPEED_MODE === m[0] ? '#6ee7b7' : '#cbd5e1');
+    b.addEventListener('click', () => {
+      if (SPEED_MODE === m[0]) return;
+      setSpeedMode(m[0]); saveTuning(); buildTimingTab();
+      setTuneStatus('已切換到 ' + m[1] + '，下一局起生效', 'ok');
+    });
+    sw.appendChild(b);
+  });
+  tuneBody.appendChild(sw);
   const hint = document.createElement('div');
   hint.className = 'tune-hint';
   hint.textContent = '甘特圖：拖色條改起點、拖右緣改時長；右側兩欄為起點／時長（秒）。即時生效並自動存在瀏覽器。';
@@ -3310,7 +3504,9 @@ document.getElementById('tuneApplySpin').addEventListener('click', () => {
   }
 });
 document.getElementById('tuneReset').addEventListener('click', () => {
-  TIMING = Object.assign({}, DEFAULT_TIMING);
+  TIMING_AUTO  = Object.assign({}, DEFAULT_TIMING);
+  TIMING_TURBO = Object.assign({}, DEFAULT_TIMING_TURBO);
+  setSpeedMode(SPEED_MODE);       // 重新指向重建後的那一份
   TIMING_START = Object.assign({}, DEFAULT_TIMING_START);
   LAYOUT = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
   FX = Object.assign({}, DEFAULT_FX);
@@ -3379,7 +3575,644 @@ function layoutHitTest(mx, my) {
 }
 
 /* ============================================================
- * 區塊 8：輸入
+ * 區塊 8：節奏表匯出（產真 .xlsx 的節奏組工作表）
+ * 格式與樣式依據：slot-demo-from-gdd skill 的 references/rhythm-sheet-format.md
+ *（來源＝節奏資料夾實檔傾印；顏色一律以 Excel 讀回的 RGB 為準，
+ *  theme+tint 自己換算會有 1~2 的誤差）
+ * 換遊戲時要改的是【區塊 1】的 RHYTHM_TYPE / RHYTHM_MAP，以及本區的 rhythmTimeline()。
+ * ========================================================== */
+
+/* --- 最小 XLSX 產生器：store-only ZIP + 自寫 CRC32，不依賴任何外部函式庫 --- */
+const CRC_TABLE = (function () {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+// files: [{ name, data:Uint8Array }] → Blob（method 0 = store，Excel 完全接受）
+function zipStore(files) {
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0, centralSize = 0;
+  files.forEach(f => {
+    const nb = enc.encode(f.name), crc = crc32(f.data), len = f.data.length;
+    const lh = new Uint8Array(30 + nb.length), lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0, true);
+    lv.setUint16(8, 0, true); lv.setUint16(10, dosTime, true); lv.setUint16(12, dosDate, true);
+    lv.setUint32(14, crc, true); lv.setUint32(18, len, true); lv.setUint32(22, len, true);
+    lv.setUint16(26, nb.length, true); lv.setUint16(28, 0, true);
+    lh.set(nb, 30);
+    parts.push(lh, f.data);
+    const cd = new Uint8Array(46 + nb.length), cv = new DataView(cd.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0, true); cv.setUint16(10, 0, true);
+    cv.setUint16(12, dosTime, true); cv.setUint16(14, dosDate, true);
+    cv.setUint32(16, crc, true); cv.setUint32(20, len, true); cv.setUint32(24, len, true);
+    cv.setUint16(28, nb.length, true); cv.setUint32(42, offset, true);
+    cd.set(nb, 46);
+    central.push(cd);
+    offset += lh.length + len;
+    centralSize += cd.length;
+  });
+  const eo = new Uint8Array(22), ev = new DataView(eo.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, files.length, true); ev.setUint16(10, files.length, true);
+  ev.setUint32(12, centralSize, true); ev.setUint32(16, offset, true);
+  return new Blob(parts.concat(central, [eo]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+/* --- 樣式定義（全部對照實檔，改之前先重新傾印核對） --- */
+const XLS_FONT_NAME = '微軟正黑體';
+// [字級, 粗體, 字色]
+const XLS_FONTS = [
+  [10, false, '000000'],   // 0 甘特條、事件標記、刻度
+  [10, true,  '000000'],   // 1 「得分流程」小標
+  [10, false, 'FF0000'],   // 2 跳過標記、跳過說明、下局自動啟動
+  [12, false, '000000'],   // 3 停輪規則、表格類分頁本文
+  [12, true,  '000000'],   // 4 情境名
+  [12, false, 'FF0000'],   // 5 節奏表最上方兩行提醒
+];
+// null = 無框線；{ left/right/top/bottom: [style, rgb] }
+const XLS_BORDERS = [
+  null,                                                   // 0
+  { left: ['medium', 'FF0000'] },                         // 1 事件標記：時間軸上的紅色垂直線
+  { left: ['thin', 'FF0000'], top: ['thin', 'FF0000'],
+    bottom: ['thin', 'FF0000'] },                         // 2 跳過標記
+  { right: ['thin', '000000'] },                          // 3 刻度格右緣
+  { left: ['thin', 'D9D9D9'], right: ['thin', 'D9D9D9'],
+    top: ['thin', 'D9D9D9'], bottom: ['thin', 'D9D9D9'] }, // 4 工具參數表
+  { left: ['thin', 'D0D0D0'], right: ['thin', 'D0D0D0'],
+    top: ['thin', 'D0D0D0'], bottom: ['thin', 'D0D0D0'] }, // 5 範本／說明／檢核
+];
+// 填色：Excel 讀回的權威 RGB（不是 theme+tint 自算值）
+const RHYTHM_FILL_RGB = {
+  mark:      'E97132',  // A 欄的情境區塊標記
+  scenario:  '61CBF3',  // 情境名整列
+  scale:     'C0E6F5',  // 時間刻度列
+  reel:      'FFD5EA',  // 滾輪滾動
+  stop:      'FE9090',  // 逐輪停止
+  pause:     'FFFF93',  // 停頓／局間
+  symbol:    'DCB9FF',  // 得分牌／功能卡演繹
+  line:      'C1F0C8',  // 得分牌抬起（起段）
+  lineHold:  '83E28E',  // 停留
+  lineEnd:   '47D359',  // 收尾／重轉
+  score:     'DAE9F8',  // 分數登場／復原演繹
+  scoreHold: '83CCEB',  // 停留（分數）／範本分組列
+  gap:       'F7C7AC',  // 演繹間隔註記
+  big:       'FFC000',  // 大獎／相乘演繹／起始倍數加倍
+  white:     'FFFFFF',  // 表格白底
+};
+const XLS_FILL_KEYS = Object.keys(RHYTHM_FILL_RGB);
+
+// cellXfs 登記：defXf(名稱, 字型, 填色, 框線, 水平對齊)。垂直一律 center（實檔全表如此）。
+const XF = {}, XF_LIST = [];
+function defXf(name, font, fill, border, halign, wrap) {
+  XF[name] = XF_LIST.length;
+  XF_LIST.push({ font: font, fill: fill, border: border, halign: halign, wrap: wrap });
+}
+defXf('plain',    0, null, 0, null);
+defXf('notice',   5, null, 0, null);          // r1/r2 紅字提醒
+defXf('ruleLine', 3, null, 0, null);          // r3 停輪規則
+defXf('scenario', 4, 'scenario', 0, null);    // 情境名列
+defXf('markCol',  3, 'mark', 0, null);        // A 欄標記
+defXf('flow',     1, null, 0, null);          // 「得分流程: (每格0.1秒)」
+defXf('scale',    0, 'scale', 0, null);       // 刻度列一般格
+defXf('scaleNum', 0, 'scale', 3, 'right');    // 刻度數字格（右緣黑線）
+defXf('event',    0, null, 1, null);          // 事件標記（左緣紅粗線）
+defXf('eventRed', 2, null, 1, null);          // 下局自動啟動（紅字）
+defXf('skip',     2, null, 2, null);          // 跳過1/2/3
+defXf('note',     2, null, 0, null);          // 跳過規則說明
+const XF_BAR0 = XF_LIST.length;               // 甘特條：每個填色一個 xf
+XLS_FILL_KEYS.forEach(k => defXf('bar_' + k, 0, k, 0, null));
+defXf('tblCell',  3, null, 4, null, true);    // 工具參數表：文字格
+defXf('tblNum',   3, null, 4, 'center');      // 工具參數表：數值格
+defXf('fbName',   3, 'white', 5, 'left');     // 範本：項目名
+defXf('fbCell',   3, 'white', 5, 'center');   // 範本：一般格
+defXf('fbInput',  3, 'score', 5, 'center');   // 範本：待填格（淺藍底）
+defXf('fbHead',   3, 'scale', 5, 'left');     // 範本：AUTO/TURBO 表頭
+defXf('fbGroup',  3, 'scoreHold', 5, 'left'); // 範本：無得分/有得分 分組列
+defXf('fbGroupC', 3, 'scoreHold', 5, 'center');
+function xfBar(fillKey) {
+  const i = XLS_FILL_KEYS.indexOf(fillKey);
+  return i < 0 ? XF.plain : XF_BAR0 + i;
+}
+
+/* --- 表格模型 --- */
+function colName(c) {
+  let s = '';
+  while (c > 0) { const m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = (c - m - 1) / 26; }
+  return s;
+}
+function xmlEsc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+// fmt = [預設欄寬, 預設列高]
+function newSheet(name, fmt) {
+  return { name: name, fmt: fmt || [3.375, 21], cols: [], rows: {}, merges: [] };
+}
+function put(sh, r, c, v, style) {
+  if (!sh.rows[r]) sh.rows[r] = {};
+  sh.rows[r][c] = { v: (v === undefined ? null : v), s: style || 0 };
+  return sh;
+}
+function putRow(sh, r, c0, values, style) {
+  values.forEach((v, i) => put(sh, r, c0 + i, v, style));
+}
+// 甘特條：合併 c1..c2 並上色。合併區內每一格都要存在，否則 Excel 不畫底色。
+function bar(sh, r, c1, c2, text, fillKey) {
+  const st = xfBar(fillKey);
+  if (c2 < c1) c2 = c1;
+  for (let c = c1; c <= c2; c++) put(sh, r, c, c === c1 ? text : null, st);
+  if (c2 > c1) sh.merges.push(colName(c1) + r + ':' + colName(c2) + r);
+}
+function sheetXml(sh) {
+  let x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<sheetFormatPr defaultColWidth="' + sh.fmt[0] + '" defaultRowHeight="' + sh.fmt[1] + '"/>';
+  if (sh.cols.length) {
+    x += '<cols>' + sh.cols.map(c =>
+      '<col min="' + c[0] + '" max="' + c[1] + '" width="' + c[2] + '" customWidth="1"/>').join('') + '</cols>';
+  }
+  x += '<sheetData>';
+  Object.keys(sh.rows).map(Number).sort((a, b) => a - b).forEach(r => {
+    const row = sh.rows[r];
+    x += '<row r="' + r + '" ht="' + sh.fmt[1] + '" customHeight="1">';
+    Object.keys(row).map(Number).sort((a, b) => a - b).forEach(c => {
+      const cell = row[c], ref = colName(c) + r;
+      const s = cell.s ? ' s="' + cell.s + '"' : '';
+      if (cell.v === null || cell.v === '') x += '<c r="' + ref + '"' + s + '/>';
+      else if (typeof cell.v === 'number' && isFinite(cell.v)) x += '<c r="' + ref + '"' + s + '><v>' + cell.v + '</v></c>';
+      else x += '<c r="' + ref + '"' + s + ' t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(cell.v) + '</t></is></c>';
+    });
+    x += '</row>';
+  });
+  x += '</sheetData>';
+  if (sh.merges.length) {
+    x += '<mergeCells count="' + sh.merges.length + '">'
+      + sh.merges.map(m => '<mergeCell ref="' + m + '"/>').join('') + '</mergeCells>';
+  }
+  return x + '</worksheet>';
+}
+function stylesXml() {
+  const fonts = XLS_FONTS.map(f =>
+    '<font><sz val="' + f[0] + '"/>' + (f[1] ? '<b/>' : '')
+    + '<color rgb="FF' + f[2] + '"/><name val="' + XLS_FONT_NAME + '"/><charset val="136"/></font>');
+  const fills = ['<fill><patternFill patternType="none"/></fill>',
+    '<fill><patternFill patternType="gray125"/></fill>']
+    .concat(XLS_FILL_KEYS.map(k =>
+      '<fill><patternFill patternType="solid"><fgColor rgb="FF' + RHYTHM_FILL_RGB[k] + '"/>'
+      + '<bgColor indexed="64"/></patternFill></fill>'));
+  const borders = XLS_BORDERS.map(b => {
+    if (!b) return '<border><left/><right/><top/><bottom/><diagonal/></border>';
+    const side = n => b[n]
+      ? '<' + n + ' style="' + b[n][0] + '"><color rgb="FF' + b[n][1] + '"/></' + n + '>'
+      : '<' + n + '/>';
+    return '<border>' + side('left') + side('right') + side('top') + side('bottom') + '<diagonal/></border>';
+  });
+  const xfs = XF_LIST.map(s => {
+    const fillId = s.fill ? 2 + XLS_FILL_KEYS.indexOf(s.fill) : 0;
+    const align = '<alignment' + (s.halign ? ' horizontal="' + s.halign + '"' : '')
+      + ' vertical="center"' + (s.wrap ? ' wrapText="1"' : '') + '/>';
+    return '<xf numFmtId="0" fontId="' + s.font + '" fillId="' + fillId + '" borderId="' + s.border
+      + '" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">' + align + '</xf>';
+  });
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<fonts count="' + fonts.length + '">' + fonts.join('') + '</fonts>'
+    + '<fills count="' + fills.length + '">' + fills.join('') + '</fills>'
+    + '<borders count="' + borders.length + '">' + borders.join('') + '</borders>'
+    + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    + '<cellXfs count="' + xfs.length + '">' + xfs.join('') + '</cellXfs>'
+    + '<cellStyles count="1"><cellStyle name="一般" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+}
+function buildXlsx(sheets) {
+  const enc = new TextEncoder();
+  const files = [];
+  const add = (name, text) => files.push({ name: name, data: enc.encode(text) });
+  add('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+    + '<Default Extension="xml" ContentType="application/xml"/>'
+    + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+    + sheets.map((s, i) => '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" '
+      + 'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')
+    + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+    + '</Types>');
+  add('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+    + 'Target="xl/workbook.xml"/></Relationships>');
+  add('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+    + 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+    + sheets.map((s, i) => '<sheet name="' + xmlEsc(s.name) + '" sheetId="' + (i + 1)
+      + '" r:id="rId' + (i + 1) + '"/>').join('')
+    + '</sheets></workbook>');
+  add('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + sheets.map((s, i) => '<Relationship Id="rId' + (i + 1) + '" '
+      + 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+      + 'Target="worksheets/sheet' + (i + 1) + '.xml"/>').join('')
+    + '<Relationship Id="rId' + (sheets.length + 1) + '" '
+    + 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" '
+    + 'Target="styles.xml"/></Relationships>');
+  add('xl/styles.xml', stylesXml());
+  sheets.forEach((s, i) => add('xl/worksheets/sheet' + (i + 1) + '.xml', sheetXml(s)));
+  return zipStore(files);
+}
+
+/* --- 節奏推導：把 TIMING 換算成一條時間軸 --- */
+const R1 = v => Math.round(v * 100) / 100;            // 對齊實檔的兩位小數
+const RCOL = t => 2 + Math.round(t / 0.1);            // B 欄 = 時間 0，每欄 0.1 秒
+
+// 得分層級（1/2/3 階）由贏分倍數決定 [§高倍得分層級設計 B6:M12]，與 tierOf() 同一組門檻
+function rhythmStage(tier) {
+  if (!tier) return 1;
+  return tier[0] >= FX.tier3Ratio ? 3 : tier[0] >= FX.tier2Ratio ? 2 : 1;
+}
+
+/* 產生一個情境的時間軸。kind: 'none' | 'one' | 'multi'
+ *   none  = 無得分
+ *   one   = 單回合得分
+ *   multi = 多回合重轉得分（Crescendo 的回合是**序列**的：得分→重轉→再得分）
+ * 回傳 { segs:[{t0,dur,text,fill}], marks:[{t,text,red}], skips:[t...], notes:[...], total } */
+function rhythmTimeline(T, kind, tier) {
+  const segs = [], marks = [], skips = [], notes = [];
+  const first = T.reelStart, gap = T.reelStopInterval;
+  const allStop = first + gap * (COLS - 1) + T.landBounce;
+  segs.push({ t0: 0, dur: first, text: '滾輪滾動(' + R1(first) + 's)', fill: 'reel' });
+  segs.push({ t0: first, dur: Math.max(0.1, allStop - first),
+    text: '逐輪停止(' + R1(allStop - first) + 's)', fill: 'stop' });
+  for (let c = 0; c < COLS; c++) marks.push({ t: first + gap * c, text: '第' + (c + 1) + '輪停輪' });
+  skips.push(0);
+  notes.push('立刻停輪');
+
+  let t = allStop;
+  if (kind === 'none') {
+    segs.push({ t0: t, dur: T.idleGap,
+      text: '未得停頓(開始下一局)(' + R1(T.idleGap) + 's)', fill: 'pause' });
+    t += T.idleGap;
+    marks.push({ t: t, text: '下局自動啟動', red: true });
+    skips.push(allStop);
+    notes.push('立即啟動下一局');
+    return { segs: segs, marks: marks, skips: skips, notes: notes, total: t };
+  }
+
+  const rounds = (kind === 'multi') ? 2 : 1;
+  const st = rhythmStage(tier);
+  const pre = T['preHold' + st], post = T['postHold' + st];
+
+  for (let g = 0; g < rounds; g++) {
+    // 停輪後中獎停頓 [§節奏表 D7]
+    segs.push({ t0: t, dur: T.winHold, text: '停頓時間(中獎)(' + R1(T.winHold) + 's)', fill: 'pause' });
+    t += T.winHold;
+    marks.push({ t: t, text: g === 0 ? '得分牌鎖定' : '重轉後再得分' });
+    skips.push(t);
+
+    // 得分牌鎖定 ＋ 逐張抬起（同時段，甘特圖會自動排成兩列）
+    const lift = T.cardLift + T.cardLiftStagger * (COLS - 1);
+    segs.push({ t0: t, dur: T.cardLock, text: '得分牌鎖定(' + R1(T.cardLock) + 's)', fill: 'symbol' });
+    segs.push({ t0: t, dur: lift, text: '得分牌抬起(' + R1(lift) + 's)', fill: 'line' });
+    t += Math.max(T.cardLock, lift);
+
+    // 功能卡由左至右逐張觸發 [§一般遊戲 D53]
+    const featDur = T.featTrigger * RHYTHM_FEAT_CARDS;
+    segs.push({ t0: t, dur: featDur,
+      text: '功能卡逐張觸發(' + R1(featDur) + 's／' + RHYTHM_FEAT_CARDS + '張)', fill: 'symbol' });
+    for (let i = 0; i < RHYTHM_FEAT_CARDS; i++) {
+      marks.push({ t: t + T.featTrigger * i, text: '第' + (i + 1) + '張功能卡' });
+    }
+    t += featDur;
+
+    // 得分相乘_演繹前停留（鏡頭在這段拉近）[§高倍得分層級設計 E5/J4]
+    segs.push({ t0: t, dur: pre, text: '得分相乘前停留(' + R1(pre) + 's)', fill: 'pause' });
+    marks.push({ t: t, text: '鏡頭拉近(' + st + '階)' });
+    t += pre;
+
+    // 【得分相乘演繹】兩欄往中間碰撞 [§美術 H47]
+    segs.push({ t0: t, dur: T.multSlam, text: '得分相乘演繹(' + R1(T.multSlam) + 's)', fill: 'big' });
+    marks.push({ t: t + T.multSlam * 0.55, text: '兩欄碰撞(震動)' });
+    t += T.multSlam;
+
+    // 相乘演繹後、跑分前停留 [§高倍得分層級設計 F5]
+    segs.push({ t0: t, dur: post, text: '跑分前停留(' + R1(post) + 's)', fill: 'pause' });
+    t += post;
+    skips.push(t);
+
+    // 跑分 → 停留 → 復原演繹 [§節奏表 D8/D9]＋[§美術 H48]
+    segs.push({ t0: t, dur: T.scoreAppear,
+      text: '得分數字跑分(' + R1(T.scoreAppear) + 's)', fill: 'score' });
+    marks.push({ t: t, text: '公版分數同步跑分' });
+    t += T.scoreAppear;
+    segs.push({ t0: t, dur: T.scoreHold, text: '停留(' + R1(T.scoreHold) + 's)', fill: 'scoreHold' });
+    t += T.scoreHold;
+    segs.push({ t0: t, dur: T.slamRestore, text: '復原演繹(' + R1(T.slamRestore) + 's)', fill: 'score' });
+    t += T.slamRestore;
+
+    // 多回合情境的第一回合用「5 張全中 → 起始倍數加倍」當觸發重轉的理由 [§一般遊戲 E47]
+    if (kind === 'multi' && g === 0) {
+      segs.push({ t0: t, dur: T.multBoost,
+        text: '起始倍數加倍演繹(' + R1(T.multBoost) + 's)', fill: 'big' });
+      marks.push({ t: t, text: '牌組向上撞擊' });
+      t += T.multBoost;
+    }
+
+    if (g < rounds - 1) {
+      segs.push({ t0: t, dur: T.respinPause,
+        text: '重轉前停頓(' + R1(T.respinPause) + 's)', fill: 'pause' });
+      t += T.respinPause;
+      const respin = T.reelStart + T.landBounce;
+      segs.push({ t0: t, dur: respin, text: '重轉滾動(' + R1(respin) + 's)', fill: 'lineEnd' });
+      marks.push({ t: t, text: '重轉(鎖定得分牌)' });
+      skips.push(t);
+      t += respin;
+    }
+  }
+
+  if (tier && tier[0] >= 50) {                        // 50 倍起有大獎報獎 [§美術 B76:D81]
+    segs.push({ t0: t, dur: T.bigWinHold, text: '大獎報獎(' + R1(T.bigWinHold) + 's)', fill: 'big' });
+    t += T.bigWinHold;
+    notes.push('大獎跳過立刻分數呈現最終');
+  }
+  segs.push({ t0: t, dur: T.autoSpinDelay,
+    text: '得分停頓(開始下一局)(' + R1(T.autoSpinDelay) + 's)', fill: 'pause' });
+  skips.push(t);
+  t += T.autoSpinDelay;
+  marks.push({ t: t, text: '下局自動啟動', red: true });
+  notes.push('得分牌直接落回、分數直接顯示，並停留後一起關閉。');
+  notes.push('點擊跳過後開始淡出，跳過局間直接啟動下一局。');
+  return { segs: segs, marks: marks, skips: skips, notes: notes, total: t };
+}
+
+/* --- 分頁一：節奏表（甘特圖） --- */
+function sheetGantt() {
+  const sh = newSheet('節奏表', [3.375, 21]);   // 實檔的 defaultColWidth / defaultRowHeight
+  let r = 1;
+  put(sh, r++, 2, '每小格單位：0.1秒(節奏計算依手機版60FPS為主)', XF.notice);
+  put(sh, r++, 2, '節奏時間的計算及測量請務必使用公用測試機進行', XF.notice);
+  // ⚠️ 這三列 + 一列空白是公版的固定開頭，**不要多塞列**——
+  //    下面每個情境區塊的列位（停輪規則 r5 / 情境名 r6 / 得分流程 r7 / 刻度 r8 / 甘特條 r9）
+  //    是節奏組樣式驗證的錨點，多一列全部位移就對不上了。註記併進第 3 列。
+  put(sh, r++, 2, GAME_NAME + '　節奏表（demo 匯出的設計值，實測請以公用測試機覆蓋）'
+    + '　※本遊戲為撲克牌型判定，一局只成立一種牌型，沒有「多種圖示同時中獎」；'
+    + '公版的「多種圖示」在此對應「多回合重轉」（得分→重轉→再得分）。', XF.notice);
+  r++;
+
+  const scenarios = [];
+  [['AUTO', TIMING_AUTO], ['TURBO', TIMING_TURBO]].forEach(m => {
+    scenarios.push({ T: m[1], kind: 'none', title: m[0] + ' 一般/FG：無中獎', tier: null });
+    scenarios.push({ T: m[1], kind: 'one', tier: RHYTHM_TIERS[0],
+      title: m[0] + ' 一般/FG：中獎(單回合)得分＜10倍以下' });
+    RHYTHM_TIERS.forEach(tier => {
+      scenarios.push({ T: m[1], kind: 'multi', tier: tier,
+        title: m[0] + ' 一般/FG：中獎 (多回合重轉)' + tier[2] });
+    });
+  });
+
+  scenarios.forEach(sc => {
+    const tl = rhythmTimeline(sc.T, sc.kind, sc.tier);
+    const lastCol = Math.max(RCOL(tl.total) + 2, 12);
+    put(sh, r++, 2, '同時啟動、依序停輪、按STOP同時停止', XF.ruleLine);
+    // 情境名列：A 欄橘色標記 + B..lastCol 整條淺藍
+    put(sh, r, 1, null, XF.markCol);
+    for (let c = 2; c <= lastCol; c++) put(sh, r, c, c === 2 ? sc.title : null, XF.scenario);
+    sh.merges.push('B' + r + ':' + colName(lastCol) + r);
+    r++;
+    put(sh, r++, 2, '得分流程:  (每格0.1秒)', XF.flow);
+    // 時間刻度列：整列淺藍底，每 10 欄一個 nS，數字靠右並在右緣畫一條黑線
+    const scaleRow = r++;
+    for (let c = 2; c <= lastCol; c++) put(sh, scaleRow, c, null, XF.scale);
+    for (let s = 1; RCOL(s) <= lastCol; s++) put(sh, scaleRow, RCOL(s), s + 'S', XF.scaleNum);
+    // 甘特條：同時段的段落各自佔一列，避免互相覆蓋
+    const rowEnd = [];
+    tl.segs.forEach(seg => {
+      const c1 = RCOL(seg.t0), c2 = Math.max(c1, RCOL(seg.t0 + seg.dur) - 1);
+      let k = 0;
+      while (k < rowEnd.length && rowEnd[k] >= c1) k++;
+      rowEnd[k] = c2;
+      bar(sh, r + k, c1, c2, seg.text, seg.fill);
+    });
+    r += Math.max(1, rowEnd.length);
+    tl.marks.forEach(mk => put(sh, r++, RCOL(mk.t), mk.text, mk.red ? XF.eventRed : XF.event));
+    r++;
+    tl.skips.forEach((t, i) => put(sh, r, RCOL(t), '跳過' + (i + 1), XF.skip));
+    r += 2;
+    tl.notes.forEach((n, i) => put(sh, r++, 2, (i + 1) + '.' + n, XF.note));
+    r += 2;
+  });
+  return sh;
+}
+
+/* --- 分頁二：工具參數表 --- */
+function sheetToolParams() {
+  const sh = newSheet('工具參數表', [9, 16.5]);
+  sh.cols.push([1, 1, 35.625], [2, 2, 11.125], [3, 3, 68], [4, 5, 9]);
+  putRow(sh, 1, 1, ['參數名稱', '數值範圍', '說明'], XF.tblCell);
+  putRow(sh, 1, 4, ['AUTO', 'TURBO'], XF.tblNum);
+  let r = 2;
+  RHYTHM_MAP.forEach(m => {
+    const key = m[0], fixed = m[4];
+    const a = key ? R1(TIMING_AUTO[key]) : (fixed !== undefined ? fixed : '');
+    const b = key ? R1(TIMING_TURBO[key]) : (fixed !== undefined ? fixed : '');
+    putRow(sh, r, 1, [m[1], '0.00~99.00', m[2]], XF.tblCell);
+    putRow(sh, r, 4, [a, b], XF.tblNum);
+    r++;
+  });
+  r++;
+  put(sh, r++, 1, '註：FX = 時長由特效檔決定；公版 = 用公版時長；n = 曲線設定，非時間值。', XF.plain);
+  put(sh, r++, 1, '註：本表由 ' + GAME_NAME + ' demo（' + APP_BUILD + '）匯出，為設計值，非真機實測值。', XF.plain);
+  return sh;
+}
+
+/* --- 分頁三：範本／檢核表（SOP 標準 vs 實測 vs 差距） --- */
+// SOP 標準字串 → [min, max]；純文字回 null（不判定）
+function sopRange(text) {
+  if (!text) return null;
+  const s = String(text).replace(/–/g, '-');
+  if (/^[0-9.]+$/.test(s)) { const v = parseFloat(s); return [v * 0.9, v * 1.1]; }
+  const m = s.match(/^([0-9.]+)-([0-9.]+)$/);
+  if (m) return [parseFloat(m[1]), parseFloat(m[2])];
+  return null;
+}
+function sheetTemplate() {
+  const sh = newSheet('(' + RHYTHM_TYPE + ')範本', [9, 20.1]);
+  sh.cols.push([1, 1, 2.5], [2, 3, 15.625], [4, 4, 2.5], [5, 5, 19.375], [6, 8, 15.625],
+    [9, 9, 2.5], [10, 11, 15.625], [12, 12, 2.5], [13, 13, 19.375], [14, 16, 15.625]);
+  put(sh, 2, 2, GAME_NAME + '　節奏檢核（時間點與實測皆為 demo 設計值）', XF.plain);
+
+  let lastRow = 4;
+  [[TIMING_AUTO, 0], [TIMING_TURBO, 1]].forEach(function (mode, mi) {
+    const T = mode[0], sopIdx = mode[1], c0 = 2 + mi * 8;
+    put(sh, 3, c0, mi ? 'TURBO' : 'AUTO', XF.fbHead);
+    put(sh, 3, c0 + 1, '請於左側底色處填入實測時間，右側自動判定', XF.fbCell);
+    let rr = 4;
+    // 「有得分」用單回合當基準，跟實檔的範本一致（多回合屬於甘特圖那張）
+    [['none', '無得分'], ['one', '有得分']].forEach(function (kind) {
+      const tl = rhythmTimeline(T, kind[0], kind[0] === 'none' ? null : RHYTHM_TIERS[0]);
+      put(sh, rr, c0, kind[1], XF.fbGroup);
+      put(sh, rr, c0 + 1, '實測時間點(s)', XF.fbGroupC);
+      putRow(sh, rr, c0 + 3, ['區間名稱', 'SOP標準', '實測', '差距'], XF.fbGroupC);
+      rr++;
+      // 左半：事件時間點（時間點欄用待填底色，讓節奏組直接覆蓋）
+      const events = [{ t: 0, text: '滾輪啟動' }].concat(tl.marks);
+      const startRow = rr;
+      events.forEach(function (e, i) {
+        put(sh, rr + i, c0, e.text, XF.fbName);
+        put(sh, rr + i, c0 + 1, R1(e.t), XF.fbInput);
+      });
+      // 右半：SOP 區間比對
+      const first = T.reelStart, gapT = T.reelStopInterval;
+      const allStop = first + gapT * (COLS - 1) + T.landBounce;
+      const lift = T.cardLift + T.cardLiftStagger * (COLS - 1);
+      const checks = (kind[0] === 'none') ? [
+        ['滾輪轉動', R1(allStop)],
+        ['停頓時間(局間)', R1(T.idleGap)],
+        ['單局時間', R1(tl.total)],
+      ] : [
+        ['滾輪轉動', R1(allStop)],
+        ['滾輪轉動時間', R1(first)],
+        ['每輪停止時間', R1(gapT)],
+        ['停頓時間(中獎)', R1(T.winHold)],
+        ['圖示演繹', R1(lift)],
+        ['得分顯示間隔', R1(T.postHold1)],
+        ['得分演繹', R1(T.scoreAppear)],
+        ['公版分數', R1(T.scoreHold)],
+        ['停頓時間(盤間)', R1(T.respinPause)],
+        ['停頓時間(局間)', R1(T.autoSpinDelay)],
+        ['單局時間', R1(tl.total)],
+      ];
+      checks.forEach(function (ck, i) {
+        const sop = (RHYTHM_SOP[ck[0]] || [])[sopIdx];
+        const rg = sopRange(sop);
+        const verdict = !rg ? '—'
+          : ((ck[1] >= rg[0] - 1e-9 && ck[1] <= rg[1] + 1e-9) ? '符合' : '不符合');
+        put(sh, startRow + i, c0 + 3, ck[0], XF.fbName);
+        put(sh, startRow + i, c0 + 4, sop || '無規範', XF.fbCell);
+        put(sh, startRow + i, c0 + 5, ck[1], XF.fbInput);
+        put(sh, startRow + i, c0 + 6, verdict, XF.fbCell);
+      });
+      rr = startRow + Math.max(events.length, checks.length) + 2;
+      lastRow = Math.max(lastRow, rr);
+    });
+  });
+  const foot = lastRow + 1;
+  put(sh, foot, 2, '判定規則：SOP 為區間時取區間內即符合；SOP 為單一值時容許 ±10%；純文字規範不判定（—）。', XF.plain);
+  put(sh, foot + 1, 2, '「實測時間點」是 demo 的設計值，不是錄影實測值。交給節奏組後請用公用測試機的實測值覆蓋。', XF.plain);
+  return sh;
+}
+
+/* --- 分頁四：節奏時間說明（SOP 規範，固定內容） --- */
+function sheetSop() {
+  const sh = newSheet('(' + RHYTHM_TYPE + ')節奏時間說明', [9, 20.1]);
+  sh.cols.push([1, 1, 24], [2, 2, 52], [3, 4, 14]);
+  let r = 1;
+  put(sh, r++, 1, '以手機版為準，誤差值約0.05秒。詳細規範細節請參照節奏表。', XF.notice);
+  put(sh, r++, 1, '特殊模式中(RS、FG、BG…等)，若同為SLOT類型，視情況比照節奏表。', XF.notice);
+  r++;
+  putRow(sh, r, 1, ['項目', '說明'], XF.fbGroup);
+  putRow(sh, r, 3, ['AUTO', 'TURBO'], XF.fbGroupC);
+  r++;
+  Object.keys(RHYTHM_SOP).forEach(function (k) {
+    put(sh, r, 1, k, XF.fbName);
+    put(sh, r, 2, '', XF.fbCell);
+    put(sh, r, 3, RHYTHM_SOP[k][0], XF.fbCell);
+    put(sh, r, 4, RHYTHM_SOP[k][1], XF.fbCell);
+    r++;
+  });
+  r++;
+  put(sh, r++, 1, '本表為節奏組 SOP 規範，不隨遊戲改變；欄位說明請對照節奏組正本工作表。', XF.plain);
+  return sh;
+}
+
+/* --- 分頁五：節奏組檢核（固定內容，人工勾核） --- */
+const RHYTHM_CHECKLIST = [
+  ['滾輪節奏檢核', '滾輪節奏', '滾輪轉速曲線符合模式需求'],
+  ['', '', '第一輪停止時間符合需求'],
+  ['', '', '每輪停輪間隔時間符合需求'],
+  ['', '', '停輪回彈幅度、速度、時間符合遊戲氛圍需求'],
+  ['', '', '快停時滾輪齊停'],
+  ['', '', '停輪時無效圖示數量符合需求'],
+  ['', '停頓節奏', '停輪後到中獎的停頓時間符合需求'],
+  ['', '預報節奏', '預報時間、速度曲線符合需求'],
+  ['得分演出檢核', '中獎節奏', '中獎圖示演繹時間符合需求'],
+  ['', '', '得分數字出現/結束/停留時間符合需求'],
+  ['', '', '連線演繹出現/跑線時間符合需求'],
+  ['', '', '(連爆)圖示爆破時間符合需求'],
+  ['', '', '(連爆)補盤時間/方式符合需求'],
+  ['', '', '(連爆)補盤後停頓時間'],
+  ['', '', '中獎節奏是否有依據中獎倍數的不同而做出差異'],
+  ['', '特殊機制節奏', '特殊機制演繹是否影響節奏'],
+  ['', '停頓節奏', '進特殊模式前的特殊圖示演繹(停頓)時間符合需求'],
+  ['局間節奏檢核', '停頓節奏', '無得分局間停頓時間符合模式需求'],
+  ['', '', '有得分局間停頓時間符合模式需求'],
+  ['跳過機制檢核', '跳過機制是否製作', '跳過機制製作評估(若評估無需製作，以下省略)'],
+  ['', '跳過節奏', '跳過機制模式檢核：滾輪/中獎/分數顯示/特殊機制'],
+  ['', '', '跳過後整體節奏有縮短'],
+  ['', '跳過節奏下的畫面辨視', '跳過後機制結果是否清楚呈現'],
+  ['', '', '跳過機制是否影響得分數字辯視'],
+  ['', '特殊機制檢查', '跳過機制不可跳過重要機制'],
+  ['節奏搭配檢核', '整體節奏檢視', '不同機制切換節奏流暢不互相影響'],
+  ['', '', '機制演出時間符合該機制強度'],
+  ['無中獎節奏檢核', '無中獎節奏', '無中獎時的節奏應快速但可看清盤面'],
+  ['邏輯一致性檢核', '特殊機制檢查', 'Turbo模式不可略過重要機制'],
+  ['', '', 'Turbo模式不可加速重要機制的演出'],
+  ['', '', '若無特殊需求，AUTO、TURBO的節奏邏輯應一致'],
+];
+function sheetChecklist() {
+  const sh = newSheet('節奏組檢核1.0.0ver', [9, 20.1]);
+  sh.cols.push([1, 1, 5], [2, 2, 18], [3, 3, 22], [4, 4, 48], [5, 7, 9], [8, 8, 22]);
+  putRow(sh, 1, 1, ['', '主項', '副項', '檢核內容'], XF.fbGroup);
+  putRow(sh, 1, 5, ['人員', '組長', '部長', '備註(補充說明)'], XF.fbGroupC);
+  let r = 2;
+  RHYTHM_CHECKLIST.forEach(function (row, i) {
+    put(sh, r, 1, i + 1, XF.fbCell);
+    put(sh, r, 2, row[0], XF.fbName);
+    put(sh, r, 3, row[1], XF.fbName);
+    put(sh, r, 4, row[2], XF.fbName);
+    putRow(sh, r, 5, ['False', 'False', 'False', ''], XF.fbCell);
+    r++;
+  });
+  return sh;
+}
+
+/* --- 按鈕 --- */
+function exportRhythmSheet() {
+  const sheets = [sheetGantt(), sheetToolParams(), sheetTemplate(), sheetSop(), sheetChecklist()];
+  const blob = buildXlsx(sheets);
+  const d = new Date();
+  const stamp = d.getFullYear()
+    + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  const name = GAME_NAME.replace(/[\\/:*?"<>|]/g, '_') + '節奏組工作表_' + stamp + '.xlsx';
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return name;
+}
+document.getElementById('tuneExportRhythm').addEventListener('click', () => {
+  try {
+    const name = exportRhythmSheet();
+    setTuneStatus('已匯出 ' + name, 'ok');
+  } catch (e) {
+    setTuneStatus('匯出失敗：' + e.message, 'wait');
+    console.error(e);
+  }
+});
+
+/* ============================================================
+ * 區塊 9：輸入
  * ========================================================== */
 function hit(o, mx, my) { return mx >= o.x && mx <= o.x + o.w && my >= o.y && my <= o.y + o.h; }
 
@@ -3501,7 +4334,7 @@ window.addEventListener('storage', e => {
 });
 
 /* ============================================================
- * 區塊 9：主迴圈與入口
+ * 區塊 10：主迴圈與入口
  * ========================================================== */
 function gameLoop() {
   update();

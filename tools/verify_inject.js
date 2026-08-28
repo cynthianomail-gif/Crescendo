@@ -171,7 +171,9 @@ function run() {
     startMult = 1; freeCount = 0; fgPending = false;
     stats = { spins: 0, hits: 0 }; totalScore = 0; spinWin = 0; fgWin = 0;
     features = []; generateBoard();
-    TIMING = Object.assign({}, DEFAULT_TIMING);
+    TIMING_AUTO  = Object.assign({}, DEFAULT_TIMING);
+    TIMING_TURBO = Object.assign({}, DEFAULT_TIMING_TURBO);
+    setSpeedMode('auto');
     FX = Object.assign({}, DEFAULT_FX);
     ODDS = Object.assign({}, DEFAULT_ODDS);
     applyTuning(); syncLayoutDerived();
@@ -385,7 +387,7 @@ function run() {
   /* ===== 10b. 得分牌抬起（出牌感）與功能卡命中箭頭 ===== */
   NOTE('10b. 抬起與箭頭');
   reset();
-  T('TUNE_VERSION 已升版（DEFAULT 結構有變）', TUNE_VERSION === 5, TUNE_VERSION);
+  T('TUNE_VERSION 已升版（DEFAULT 結構有變）', TUNE_VERSION === 6, TUNE_VERSION);
 
   // --- 哪張牌命中哪張功能卡 ---
   var T_RANK2 = 0, T_SUIT_H = 14, T_FACE = 17;   // TIERS: 0~12 點數 / 13~16 ♠♥♦♣ / 17 人頭
@@ -870,6 +872,45 @@ function run() {
     }
   }
   T('10f 端對端：每張被套用的功能卡都至少對上一張得分牌', mismatch === 0, 'mismatch=' + mismatch);
+  reset();
+
+  /* ===== 10g. AUTO/TURBO 兩組節奏 + 節奏表匯出的註冊表（2026-08-28）=====
+     完整的匯出驗收在 tools/verify_rhythm.py（端對端產檔）＋ verify_rhythm_style.ps1（樣式）
+     ＋ verify_rhythm_layout.py（版面遮蔽）三關；這裡只釘住最容易漂掉的註冊表一致性。 */
+  NOTE('10g. 雙組節奏與節奏表註冊表');
+  reset();
+  var kAuto = Object.keys(DEFAULT_TIMING).sort().join(',');
+  var kTurbo = Object.keys(DEFAULT_TIMING_TURBO).sort().join(',');
+  T('10g AUTO / TURBO 兩組節奏的 key 完全一致', kAuto === kTurbo,
+    'auto=' + Object.keys(DEFAULT_TIMING).length + ' turbo=' + Object.keys(DEFAULT_TIMING_TURBO).length);
+  var mapped = RHYTHM_MAP.filter(function (m) { return m[0]; }).map(function (m) { return m[0]; });
+  var missMap = Object.keys(DEFAULT_TIMING).filter(function (k) { return mapped.indexOf(k) < 0; });
+  var strayMap = mapped.filter(function (k) { return !(k in DEFAULT_TIMING); });
+  T('10g RHYTHM_MAP 涵蓋每一個 TIMING', missMap.length === 0, missMap.join(','));
+  T('10g RHYTHM_MAP 沒有多餘 key', strayMap.length === 0, strayMap.join(','));
+  T('10g RHYTHM_MAP 沒有重複的參數名',
+    (function () { var n = {}, d = 0; RHYTHM_MAP.forEach(function (m) { if (n[m[1]]) d++; n[m[1]] = 1; }); return d === 0; })());
+  var nanT = [];
+  [['auto', DEFAULT_TIMING], ['turbo', DEFAULT_TIMING_TURBO]].forEach(function (p) {
+    Object.keys(p[1]).forEach(function (k) { if (!isFinite(p[1][k])) nanT.push(p[0] + '.' + k); });
+  });
+  T('10g 兩組節奏都沒有 NaN', nanT.length === 0, nanT.join(','));
+  T('10g SOP 表有這款的類型', !!RHYTHM_SOP && Object.keys(RHYTHM_SOP).length > 10, RHYTHM_TYPE);
+
+  // 切換速度模式：TIMING 要重新指向那一組，且 applyTuning 算出的幀數跟著變
+  setSpeedMode('auto');
+  var fAuto = (function () { applyTuning(); return TF(TIMING.reelStart); })();
+  T('10g AUTO 模式 TIMING 指向 TIMING_AUTO', TIMING === TIMING_AUTO);
+  setSpeedMode('turbo');
+  var fTurbo = TF(TIMING.reelStart);
+  T('10g TURBO 模式 TIMING 指向 TIMING_TURBO', TIMING === TIMING_TURBO);
+  T('10g 切到 TURBO 後衍生幀數真的變短', fTurbo < fAuto, fAuto + ' -> ' + fTurbo);
+  // 改 TURBO 不能污染 AUTO（兩組必須是各自獨立的物件）
+  TIMING_TURBO.reelStart = 0.11;
+  T('10g 改 TURBO 不會動到 AUTO', TIMING_AUTO.reelStart === DEFAULT_TIMING.reelStart,
+    TIMING_AUTO.reelStart);
+  TIMING_TURBO.reelStart = DEFAULT_TIMING_TURBO.reelStart;
+  setSpeedMode('auto');
   reset();
 
   /* ===== 10c. 版面幾何（把只有肉眼看得到的重疊問題釘住）===== */

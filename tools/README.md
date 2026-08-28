@@ -33,3 +33,20 @@ python tools/shot.py
 - `--user-data-dir` 指向暫存目錄，避開既有 Chrome 的 profile 鎖。
 - 測試若出現間歇性失敗，先懷疑「隨機發到的功能卡改變了盤面」——
   已知會干擾的是「轉換WILD」卡（設 `ODDS.wToWild = 0` 隔離）。
+
+## 節奏表匯出的驗收（三關，缺一不可）
+
+面板底部「匯出節奏表」產的 .xlsx 要過這三關才算數（依據：slot-demo-from-gdd skill 的
+references/rhythm-sheet-format.md）：
+
+```
+python tools/verify_rhythm.py index.html <輸出目錄>          # 1 端對端產檔 + 面板改值有跟上
+powershell -File tools/verify_rhythm_style.ps1 <xlsx>        # 2 Excel COM 逐項比對樣式
+python tools/verify_rhythm_layout.py <xlsx>                  # 3 版面遮蔽掃描
+```
+
+- 第 2 關一定要用 Excel COM：openpyxl 讀合併格的樣式會失真（非左上角的格回 MergedCell，
+  fill 一律是預設值，看起來像沒上色，其實檔案是對的）。
+- 第 2 關的座標常數綁著本遊戲的節奏值（例：事件標記「第1輪停輪」在 L 欄 = RCOL(reelStart=1.0)）。
+  改了 reelStart 就要同步改那三行。
+- 第 3 關掃「有文字卻落在合併區內非左上角」→ 那個字在 Excel 裡看不見，目視不容易抓。
