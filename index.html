@@ -1011,6 +1011,7 @@ let drawInfo = null, drawRespinUsed = 0;
 
 let spinWin = 0, fgWin = 0, totalScore = 0, displayScore = 0;
 let bigWinLabel = '';
+let bigWinShown = 0;           // 本局已經報過的大獎階數（0 = 還沒報），只往上升不重複報
 let handLabelText = '', handLabelKind = '';
 let wildBeams = [];
 
@@ -1458,9 +1459,12 @@ function isHighScore(v) { return v / Math.max(1, ODDS.bet) > FX.highScoreRatio; 
  * 最終分數的唯一出口是下方公版的 WIN，它一律跑分。 */
 const CENTER_RUN_XC_RATIO = 10;             // 星城門檻，對齊 RHYTHM_TIERS[0] 的上界
 // [key, 完整名稱（匯出的節奏表註記用）, 判定, 面板按鈕短標（面板窄，長字會折行）]
+// 兩種規則**都是大獎必跑**：星城是「10 倍以上或大獎」，H5 是「只有大獎」。
+// 大獎門檻可以在【數值】分頁被調到 10 倍以下，所以星城那條也要把大獎 OR 進去，不能只看 10 倍。
 const CENTER_RUN_MODES = [
-  ['xc', '星城（10倍以下不跑分）', r => r >= CENTER_RUN_XC_RATIO, '星城（<10倍不跑）'],
-  ['h5', 'H5（除大獎外不跑分）',   r => r >= FX.bigWinRatio,      'H5（僅大獎跑）'],
+  ['xc', '星城（10倍以上／大獎跑分）', r => r >= CENTER_RUN_XC_RATIO || r >= FX.bigWinRatio,
+         '星城（≥10倍跑）'],
+  ['h5', 'H5（只有大獎跑分）',         r => r >= FX.bigWinRatio, 'H5（僅大獎跑）'],
 ];
 let CENTER_RUN_MODE = 'xc';
 function centerRunMode() {
@@ -1715,6 +1719,12 @@ function slamResultAlive() {
 function afterScore() {
   // 這一回合演完了 → 下方公版的累積分數直接切換到新的累計值（不跑分）[使用者 2026-08-28]
   displayScore = spinWin;
+  // 大獎：這一回合就達標就在這裡報，報完再接下面的流程 [使用者 2026-08-28]
+  if (checkBigWin()) return;
+  resumeAfterScore();
+}
+// 大獎報完（或本來就沒大獎）之後接的流程
+function resumeAfterScore() {
   // 5 張全中 → 起始倍數加倍 [§一般遊戲 E47]
   const n = handResult ? handResult.cells.length : 0;
   if (n >= COLS) { currentState = STATE.MULT_BOOST; stateTimer = 0; return; }
@@ -1754,6 +1764,28 @@ function doDrawRespin() {
   beginReels(cols);
 }
 
+/* 四階大獎 [§美術需求說明 B76:D81]。
+ * 使用者 2026-08-28：**達標的那一回合就要報，不是等一局（連爆）結束才報**。
+ * 所以判定改在每一回合的得分演繹之後（afterScore）跑，用本局累計贏分比門檻；
+ * 同一局只往上升階（BIG → SUPER → MEGA → EPIC），不會同一階重複報。 */
+const BIGWIN_LABELS = ['', 'BIG WIN', 'SUPER WIN', 'MEGA WIN', 'EPIC WIN'];
+function bigWinTierOf(v) {
+  const r = v / Math.max(1, ODDS.bet);
+  return r >= FX.epicWinRatio  ? 4
+       : r >= FX.megaWinRatio  ? 3
+       : r >= FX.superWinRatio ? 2
+       : r >= FX.bigWinRatio   ? 1 : 0;
+}
+// 有升階就進 BIGWIN 並回 true（呼叫端要 return，等報完再接原本的流程）
+function checkBigWin() {
+  const t = bigWinTierOf(spinWin);
+  if (t <= bigWinShown) return false;
+  bigWinShown = t;
+  bigWinLabel = BIGWIN_LABELS[t];
+  currentState = STATE.BIGWIN; stateTimer = 0;
+  return true;
+}
+
 function endSpin() {
   winCells = null; handResult = null; drawInfo = null;
   clearLift();
@@ -1762,15 +1794,10 @@ function endSpin() {
   for (let c = 0; c < COLS; c++) board[c][0].locked = false;
   if (hasHitThisSpin) stats.hits++;
   if (inFG) fgWin += spinWin;
-  const ratio = spinWin / Math.max(1, ODDS.bet);
-  bigWinLabel = ratio >= FX.epicWinRatio  ? 'EPIC WIN'
-              : ratio >= FX.megaWinRatio  ? 'MEGA WIN'
-              : ratio >= FX.superWinRatio ? 'SUPER WIN'
-              : ratio >= FX.bigWinRatio   ? 'BIG WIN' : '';
-  if (bigWinLabel) { currentState = STATE.BIGWIN; stateTimer = 0; return; }
-  afterBigWin();
+  finishSpin();
 }
-function afterBigWin() {
+// 一局的收尾（進 FG／FG 扣局數／AUTO 扣次數／回待機）。大獎已經在回合中報過了。
+function finishSpin() {
   bigWinLabel = '';
   if (!inFG && fgPending) { currentState = STATE.FG_ENTER; stateTimer = 0; return; }
   if (inFG) {
@@ -1798,6 +1825,7 @@ function startSpin() {
   drawRespinUsed = 0; freeRespins = 0;
   particles = []; floatTexts = []; wildBeams = [];
   slamK = 0; slamHit = false; slamRings = []; slamResult = null;   // 復原演繹 [§美術 H48]
+  bigWinShown = 0; bigWinLabel = '';        // 大獎逐局重算（FG 的每一局也各自算）
   boostK = 0; boostHit = false; boostChevrons = [];
   handLabelText = ''; handLabelKind = '';
 
@@ -2049,7 +2077,7 @@ function update() {
 
     case STATE.BIGWIN:
       stateTimer++;
-      if (stateTimer >= F_BIGWIN) afterBigWin();
+      if (stateTimer >= F_BIGWIN) { bigWinLabel = ''; resumeAfterScore(); }
       break;
 
     case STATE.FG_ENTER:
@@ -3890,6 +3918,12 @@ function rhythmTimeline(T, kind, tier) {
   const rounds = (kind === 'multi') ? 2 : 1;
   const st = rhythmStage(tier);
   const pre = T['preHold' + st], post = T['postHold' + st];
+  // 大獎在**哪一回合**達標。使用者 2026-08-28：達標的那一回合就報，不是等連爆結束才報。
+  // 示意圖裡把該級距的贏分平均分攤到各回合，取第一個累計到大獎門檻的回合。
+  let bigAt = -1;
+  if (tier) for (let g = 0; g < rounds; g++) {
+    if (tier[0] * (g + 1) / rounds >= FX.bigWinRatio) { bigAt = g; break; }
+  }
 
   for (let g = 0; g < rounds; g++) {
     // 停輪後中獎停頓 [§節奏表 D7]
@@ -3939,6 +3973,15 @@ function rhythmTimeline(T, kind, tier) {
     t += T.slamRestore;
     marks.push({ t: t, text: '公版累積分數切換' });     // 不跑分，回合結束直接切換
 
+    // 大獎報獎：達標的那一回合就報 [使用者 2026-08-28]，順序在起始倍數加倍演繹之前
+    if (g === bigAt) {
+      segs.push({ t0: t, dur: T.bigWinHold, text: '大獎報獎(' + R1(T.bigWinHold) + 's)', fill: 'big' });
+      marks.push({ t: t, text: '第' + (g + 1) + '回合達標報獎' });
+      t += T.bigWinHold;
+      notes.push('大獎（≥' + FX.bigWinRatio + '倍）在「達標的那一回合」就報，不等連爆結束；'
+        + '同一局只往上升階，不重複報。大獎跳過立刻分數呈現最終。');
+    }
+
     // 多回合情境的第一回合用「5 張全中 → 起始倍數加倍」當觸發重轉的理由 [§一般遊戲 E47]
     if (kind === 'multi' && g === 0) {
       segs.push({ t0: t, dur: T.multBoost,
@@ -3968,11 +4011,6 @@ function rhythmTimeline(T, kind, tier) {
       + '下方公版是連爆的累積分數，也不跑分，回合演完直接切換。');
   }
 
-  if (tier && tier[0] >= 50) {                        // 50 倍起有大獎報獎 [§美術 B76:D81]
-    segs.push({ t0: t, dur: T.bigWinHold, text: '大獎報獎(' + R1(T.bigWinHold) + 's)', fill: 'big' });
-    t += T.bigWinHold;
-    notes.push('大獎跳過立刻分數呈現最終');
-  }
   segs.push({ t0: t, dur: T.autoSpinDelay,
     text: '得分停頓(開始下一局)(' + R1(T.autoSpinDelay) + 's)', fill: 'pause' });
   skips.push(t);

@@ -661,7 +661,8 @@ function run() {
   /* ===== 10i. 三個分數欄各自的規則（使用者 2026-08-28 拍板）=====
      左上「得分」欄：只有這一回合的賠率贏分＋功能卡加成（不含倍數），不跑分、不出現相乘結果。
      下方公版：連爆的累積分數，也不跑分，回合演完直接切換。
-     盤面中央：依平台慣例跑分——星城 <10 倍不跑、H5 除大獎（BIG WIN 起）外不跑。 */
+     盤面中央：依平台慣例跑分——星城 ≥10 倍或大獎才跑、H5 只有大獎才跑。
+     大獎（BIG WIN 起）在**達標的那一回合**就報，不是等一局（連爆）結束才報。 */
   NOTE('10i. 三個分數欄的規則');
   reset();
 
@@ -672,6 +673,14 @@ function run() {
   T('10i 星城：9.9 倍不跑分', centerRunEnabled(9.9 * B) === false);
   T('10i 星城：10 倍跑分',    centerRunEnabled(10 * B) === true);
   T('10i 星城：24 倍跑分（未達大獎也跑）', centerRunEnabled(24 * B) === true);
+  T('10i 星城：大獎(25 倍)跑分', centerRunEnabled(25 * B) === true);
+  // 大獎門檻被調到 10 倍以下時，星城那條也要跟著跑分（不能只看 10 倍）
+  (function () {
+    var keep = FX.bigWinRatio; FX.bigWinRatio = 5;
+    T('10i 星城：大獎門檻調到 5 倍時，5 倍也要跑分', centerRunEnabled(5 * B) === true);
+    T('10i 星城：同上，4 倍仍不跑分', centerRunEnabled(4 * B) === false);
+    FX.bigWinRatio = keep;
+  })();
   CENTER_RUN_MODE = 'h5';
   T('10i H5：10 倍不跑分（與星城相反）', centerRunEnabled(10 * B) === false);
   T('10i H5：24 倍不跑分（大獎門檻 ' + FX.bigWinRatio + ' 倍以下）', centerRunEnabled(24 * B) === false);
@@ -763,6 +772,76 @@ function run() {
   var loH5 = runTrace('h5', 'pair', 0.1, 4);
   T('10i H5 低倍：中央不跑分', loH5.run === false && allSame(loH5.center));
   CENTER_RUN_MODE = keepMode;
+  reset();
+
+  /* ===== 10j. 大獎在達標的那一回合就報（使用者 2026-08-28）===== */
+  NOTE('10j. 大獎時機');
+  reset();
+
+  T('10j 四階標籤表對得上門檻', BIGWIN_LABELS.length === 5 && BIGWIN_LABELS[0] === ''
+    && BIGWIN_LABELS[1] === 'BIG WIN' && BIGWIN_LABELS[4] === 'EPIC WIN');
+  T('10j 階數判定：未達門檻 = 0', bigWinTierOf(FX.bigWinRatio * ODDS.bet - 1) === 0);
+  T('10j 階數判定：BIG = 1',   bigWinTierOf(FX.bigWinRatio * ODDS.bet) === 1);
+  T('10j 階數判定：SUPER = 2', bigWinTierOf(FX.superWinRatio * ODDS.bet) === 2);
+  T('10j 階數判定：EPIC = 4',  bigWinTierOf(FX.epicWinRatio * ODDS.bet) === 4);
+
+  // 端對端：多回合連爆，記錄大獎是在「哪一個回合之後」報的
+  function bigWinTrace(payMul, sm, maxRound) {
+    reset(); ODDS.wToWild = 0; ODDS.maxRound = maxRound; forceSpinType = 'royal';
+    ODDS.payMul = payMul;
+    var n = 0, prev = -1, roundsDone = 0, bigAtRound = -1, bigLabels = [];
+    var winAtBig = -1, spinEnded = false, bigCount = 0;
+    startSpin();
+    startMult = sm || 1; features = [];
+    while (n < 200000) {
+      update(); n++;
+      // 每次離開 SCORE_HOLD 就是一個回合的得分演繹演完了
+      if (prev === STATE.SCORE_HOLD && currentState !== STATE.SCORE_HOLD) roundsDone++;
+      if (prev !== STATE.BIGWIN && currentState === STATE.BIGWIN) {
+        bigCount++;
+        bigLabels.push(bigWinLabel);
+        if (bigAtRound < 0) { bigAtRound = roundsDone; winAtBig = spinWin; }
+      }
+      prev = currentState;
+      if (currentState === STATE.IDLE && !inFG) { spinEnded = true; break; }
+    }
+    ODDS.payMul = DEFAULT_ODDS.payMul;
+    return { rounds: roundsDone, bigAtRound: bigAtRound, labels: bigLabels, count: bigCount,
+             winAtBig: winAtBig, spinWin: spinWin, ended: spinEnded, steps: n };
+  }
+
+  // 皇家同花順 ×5 賠率乘數 → 第 1 回合就遠超大獎門檻
+  var bw = bigWinTrace(5, 1, 4);
+  T('10j 大獎有報出來', bw.bigAtRound >= 0, 'label=' + bw.labels.join(','));
+  T('10j 大獎在第 1 回合演完就報，不是等連爆結束',
+    bw.bigAtRound === 1, '在第 ' + bw.bigAtRound + ' 回合之後報（總共 ' + bw.rounds + ' 回合）');
+  T('10j 報獎當下的累計贏分已達門檻',
+    bw.winAtBig >= FX.bigWinRatio * ODDS.bet,
+    bw.winAtBig + ' >= ' + (FX.bigWinRatio * ODDS.bet));
+  T('10j 同一階不會重複報（有升階才再報一次）',
+    bw.count === new Set(bw.labels).size, bw.labels.join(','));
+  T('10j 局末仍然回到待機', bw.ended === true);
+
+  // 重轉後會不會再中是隨機的，所以多回合的樣本用抽的（單次抽不到不代表壞掉）
+  var multi = null;
+  for (var bwTry = 0; bwTry < 60 && !multi; bwTry++) {
+    var cand = bigWinTrace(5, 1, 6);
+    if (cand.rounds >= 2 && cand.bigAtRound >= 0) multi = cand;
+  }
+  T('10j 抽得到「多回合連爆 + 有大獎」的樣本', !!multi, multi ? 'rounds=' + multi.rounds : '60 次都沒抽到');
+  if (multi) {
+    T('10j 多回合：大獎仍在第 1 回合就報（不是最後一回合）',
+      multi.bigAtRound === 1 && multi.rounds >= 2,
+      '第 ' + multi.bigAtRound + ' 回合報，總共 ' + multi.rounds + ' 回合');
+    T('10j 多回合：大獎報完這一局還繼續連爆（不是直接結束）',
+      multi.rounds > multi.bigAtRound,
+      '報獎後又演了 ' + (multi.rounds - multi.bigAtRound) + ' 個回合');
+  }
+
+  // 小獎：整局都沒到門檻 → 完全不報
+  var nb = bigWinTrace(0.1, 1, 3);
+  T('10j 沒達門檻的局不報大獎', nb.bigAtRound === -1 && nb.count === 0,
+    'spinWin=' + nb.spinWin + ' 門檻=' + (FX.bigWinRatio * ODDS.bet));
   reset();
 
   /* ===== 10e. 改色 + 盤面框燈條 + 起始倍數加倍撞擊（2026-08-27）===== */
