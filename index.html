@@ -135,9 +135,13 @@ canvas { display: block; width: 100%; height: 100%; }
 }
 .gantt-bar:active { cursor: grabbing; }
 .gantt-handle {
-  position: absolute; top: 0; right: 0; width: 8px; height: 100%;
+  position: absolute; top: 0; right: 0; width: 11px; height: 100%;
   background: rgba(255,255,255,.35); cursor: ew-resize;
+  border-radius: 0 5px 5px 0;
 }
+.gantt-handle:hover { background: rgba(255,255,255,.75); }
+/* bar:active 會把游標改成 grabbing，拖右緣時要壓回 ew-resize */
+.gantt-bar:active .gantt-handle, .gantt-handle:active { cursor: ew-resize; }
 .gantt-row input {
   width: 44px; box-sizing: border-box;
   background: #0b1322; border: 1px solid #334155; color: #f8fafc;
@@ -244,7 +248,7 @@ canvas { display: block; width: 100%; height: 100%; }
  * 面板本身（區塊 7）原則上不用動。
  * ========================================================== */
 
-const APP_BUILD = 'crescendo-8';   // 驗證用識別值：測到的是不是最新版，看這個
+const APP_BUILD = 'crescendo-9';   // 驗證用識別值：測到的是不是最新版，看這個
 const GAME_NAME = 'Crescendo';
 
 const canvas = document.getElementById('gameCanvas');
@@ -3196,15 +3200,26 @@ function buildGanttRow(key, label, min, max, step, color, timelineMax) {
       const snapped = Math.round(delta / step) * step;
       if (mode === 'resize') applyDur(baseDur + snapped); else applyStart(baseStart + snapped);
     };
+    // 拖曳中把游標釘住，滑出色條範圍也不會變回預設游標
+    document.body.style.cursor = (mode === 'resize') ? 'ew-resize' : 'grabbing';
     const onUp = () => {
+      document.body.style.cursor = '';
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   };
-  bar.addEventListener('pointerdown', e => beginDrag(e, 'move'));
-  handle.addEventListener('pointerdown', e => beginDrag(e, 'resize'));
+  // ⚠️ handle 是 bar 的子元素，pointerdown 會往上冒泡到 bar。
+  // 不擋掉的話，拖右緣會同時啟動 resize 與 move 兩個拖曳 → 拉長時長的同時起點也被拖走。
+  bar.addEventListener('pointerdown', e => {
+    if (e.target === handle) return;          // 邊緣交給 handle 自己處理
+    beginDrag(e, 'move');
+  });
+  handle.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    beginDrag(e, 'resize');
+  });
 
   bar.appendChild(handle);
   track.appendChild(bar);
@@ -3264,7 +3279,9 @@ function buildTimingTab() {
   tuneBody.appendChild(sw);
   const hint = document.createElement('div');
   hint.className = 'tune-hint';
-  hint.textContent = '甘特圖：拖色條改起點、拖右緣改時長；右側兩欄為起點／時長（秒）。即時生效並自動存在瀏覽器。';
+  hint.textContent = '甘特圖：滑鼠在色條中間（手掌游標）拖曳＝移動起點；'
+    + '在色條右緣（左右箭頭游標）拖曳＝只加減演繹時長。右側兩欄為起點／時長（秒），也可直接輸入。'
+    + '即時生效並自動存在瀏覽器。';
   tuneBody.appendChild(hint);
   TIMING_META.forEach((g, gi) => {
     const h = document.createElement('div');

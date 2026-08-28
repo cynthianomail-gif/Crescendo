@@ -865,6 +865,61 @@ function run() {
   setSpeedMode('auto');
   reset();
 
+  /* ===== 10h. 甘特圖拖曳：拖中間=移動起點／拖右緣=只改時長（2026-08-28）=====
+     這個 bug 只有真的派送 pointer 事件才抓得到——handle 是 bar 的子元素，
+     pointerdown 會冒泡到 bar，於是拖右緣同時啟動了 resize 與 move 兩個拖曳。 */
+  NOTE('10h. 甘特圖拖曳');
+  reset();
+  setTunePanelOpen(true);
+  tuneTab = 'timing'; refreshTuneBody();
+  var gRows = tuneBody.querySelectorAll('.gantt-row');
+  T('10h 甘特圖有列可以拖', gRows.length > 0, gRows.length);
+  var gKey = TIMING_META[0].items[0][0];
+  var gRow = gRows[0];
+  var gBar = gRow.querySelector('.gantt-bar');
+  var gHandle = gRow.querySelector('.gantt-handle');
+  T('10h 色條與右緣把手都在', !!gBar && !!gHandle);
+
+  function pdown(el, x) {
+    el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: x }));
+  }
+  function pmove(x) {
+    window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x }));
+  }
+  function pup(x) {
+    window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x }));
+  }
+  function dragOn(el, dx) {
+    var s0 = TS(gKey), d0 = TIMING[gKey];
+    pdown(el, 400); pmove(400 + dx); pup(400 + dx);
+    return { ds: TS(gKey) - s0, dd: TIMING[gKey] - d0 };
+  }
+
+  // 拖右緣：時長要變、起點不能動（這條就是使用者回報的那個 bug）
+  setTimingStartValue(gKey, 1.0);
+  setTimingValue(gKey, 1.0, 0, 5);
+  var rz = dragOn(gHandle, 160);
+  T('10h 拖右緣：時長有變', Math.abs(rz.dd) > 1e-9, 'Δdur=' + rz.dd.toFixed(3));
+  T('10h 拖右緣：起點完全不動（bug 修正）', Math.abs(rz.ds) < 1e-9, 'Δstart=' + rz.ds.toFixed(3));
+
+  // 拖色條中間：起點要變、時長不能動
+  setTimingStartValue(gKey, 1.0);
+  setTimingValue(gKey, 1.0, 0, 5);
+  var mv = dragOn(gBar, 160);
+  T('10h 拖色條中間：起點有變', Math.abs(mv.ds) > 1e-9, 'Δstart=' + mv.ds.toFixed(3));
+  T('10h 拖色條中間：時長完全不動', Math.abs(mv.dd) < 1e-9, 'Δdur=' + mv.dd.toFixed(3));
+
+  // 游標語意：中間是手掌、右緣是左右箭頭
+  T('10h 色條游標是手掌(grab)', getComputedStyle(gBar).cursor === 'grab', getComputedStyle(gBar).cursor);
+  T('10h 右緣游標是左右箭頭(ew-resize)',
+    getComputedStyle(gHandle).cursor === 'ew-resize', getComputedStyle(gHandle).cursor);
+  T('10h 拖曳結束後沒有殘留全域游標', document.body.style.cursor === '', document.body.style.cursor);
+
+  setTimingStartValue(gKey, DEFAULT_TIMING_START[gKey]);
+  setTimingValue(gKey, DEFAULT_TIMING[gKey], 0, 5);
+  setTunePanelOpen(false);
+  reset();
+
   /* ===== 10c. 版面幾何（把只有肉眼看得到的重疊問題釘住）===== */
   NOTE('10c. 版面幾何');
   reset();
